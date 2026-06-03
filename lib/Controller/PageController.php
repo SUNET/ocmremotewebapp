@@ -6,7 +6,6 @@ namespace OCA\OCMRemoteWebApp\Controller;
 
 use OCA\OCMRemoteWebApp\AppInfo\Application;
 use OCP\AppFramework\Controller;
-use OCP\AppFramework\Http\Attribute\FrontpageRoute;
 use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\NoCSRFRequired;
 use OCP\AppFramework\Http\Attribute\OpenAPI;
@@ -19,7 +18,6 @@ class PageController extends Controller {
 	#[NoCSRFRequired]
 	#[NoAdminRequired]
 	#[OpenAPI(OpenAPI::SCOPE_IGNORE)]
-	#[FrontpageRoute(verb: 'GET', url: '/')]
 	public function index(): TemplateResponse {
 		return new TemplateResponse(
 			Application::APP_ID,
