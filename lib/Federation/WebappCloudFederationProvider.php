@@ -20,8 +20,14 @@ use Psr\Log\LoggerInterface;
  * NC's cloud_federation_api routes inbound /ocm/shares requests with
  * `resourceType: webapp` to us because Application::boot() registered
  * this provider via addCloudFederationProvider().
+ *
+ * Accepts only the post-#367 wire shape: payload in `protocol.webapp`,
+ * `permissions` enum, absolute `uri`. v1 envelopes are rejected.
  */
 class WebappCloudFederationProvider implements ICloudFederationProvider {
+
+	private const ALLOWED_PERMISSIONS = ['view', 'read', 'write', 'share'];
+	private const ALLOWED_TARGETS = ['blank', 'iframe', 'popup'];
 
 	public function __construct(
 		private IUserManager $userManager,
@@ -57,25 +63,23 @@ class WebappCloudFederationProvider implements ICloudFederationProvider {
 		}
 
 		$uri = (string)($webapp['uri'] ?? '');
-		if ($uri === '') {
-			throw new ProviderCouldNotAddShareException('webapp.uri missing or empty', '', 400);
+		if ($uri === '' || !$this->isAbsoluteUri($uri)) {
+			throw new ProviderCouldNotAddShareException('webapp.uri missing or not absolute', '', 400);
 		}
 
-		// v2 detection — per-share, not per-server. Any of the
-		// new fields tells us the sender speaks v2; otherwise treat as v1.
-		$isV2 = isset($webapp['permissions']) || isset($webapp['targets']) || isset($webapp['appName']);
-		$permissions = $this->normalizePermissions(
-			$isV2
-				? (string)($webapp['permissions'] ?? 'view')
-				: (string)($webapp['viewMode'] ?? 'view')
-		);
+		$permissions = (string)($webapp['permissions'] ?? '');
+		if (!in_array($permissions, self::ALLOWED_PERMISSIONS, true)) {
+			throw new ProviderCouldNotAddShareException('webapp.permissions missing or invalid', '', 400);
+		}
+
+		$refreshToken = (string)($webapp['sharedSecret'] ?? '');
+		if ($refreshToken === '') {
+			throw new ProviderCouldNotAddShareException('webapp.sharedSecret missing', '', 400);
+		}
+
 		$targets = $this->encodeTargets($webapp['targets'] ?? null);
 
-		// Fresh local URL key, deliberately NOT derived from sharedSecret —
-		// the launcher URL ends up in browser history, proxy logs, and
-		// Referer headers, so using the bearer here would leak it. The
-		// bearer goes in the `shared_secret` column only and is transported
-		// via POST body (v2) or destination-origin query string (v1).
+		// Fresh local URL key
 		$token = bin2hex(random_bytes(16));
 
 		$entity = new WebappShare();
@@ -87,10 +91,11 @@ class WebappCloudFederationProvider implements ICloudFederationProvider {
 		$entity->setUri($uri);
 		$entity->setPermissions($permissions);
 		$entity->setTargets($targets);
-		$entity->setSharedSecret((string)($webapp['sharedSecret'] ?? ''));
+		$entity->setRefreshToken($refreshToken);
+		// access_token / access_token_expires intentionally left NULL —
+		// TokenExchanger mints them lazily on first launch.
 		$entity->setState('pending');
 		$entity->setCreatedAt(time());
-		$entity->setProtocolVersion($isV2 ? 'v2' : 'v1');
 		$entity->setAppName((string)($webapp['appName'] ?? ''));
 		$entity->setAppIcon((string)($webapp['appIcon'] ?? ''));
 
@@ -137,10 +142,12 @@ class WebappCloudFederationProvider implements ICloudFederationProvider {
 	}
 
 	/**
-	 * Pull the `webapp` entry out of the protocol envelope. We accept:
-	 *   - `{name: "webapp", webapp: {...}}` (Option 2/3 of v1 RFC, and v2)
-	 *   - `{name: "webapp", options: {...}}` (Option 1, deprecated v1.0)
-	 *   - `{name: "multi", webapp: {...}, webdav: {...}}`
+	 * Pull the `webapp` entry out of the protocol envelope.
+	 * Accept only:
+	 *   - `{name: "webapp", webapp: {...}}`
+	 *   - `{name: "multi",  webapp: {...}, webdav: {...}}` (webdav ignored)
+	 *
+	 * v1's `{name: "webapp", options: {...}}` is rejected.
 	 *
 	 * @param array<mixed> $protocol
 	 * @return array<string, mixed>|null
@@ -150,38 +157,31 @@ class WebappCloudFederationProvider implements ICloudFederationProvider {
 		if (($name === 'webapp' || $name === 'multi') && isset($protocol['webapp']) && is_array($protocol['webapp'])) {
 			return $protocol['webapp'];
 		}
-		if ($name === 'webapp' && isset($protocol['options']) && is_array($protocol['options'])) {
-			return $protocol['options'];
-		}
 		return null;
 	}
 
-	/**
-	 * Accepts both the v1 `viewMode` enum (view/read/write) and the v2
-	 * `permissions` enum (adds `share`). The wire value is stored verbatim;
-	 * unknown values fall back to the safest option, `view`.
-	 */
-	private function normalizePermissions(string $value): string {
-		return match ($value) {
-			'view', 'read', 'write', 'share' => $value,
-			default => 'view',
-		};
+	private function isAbsoluteUri(string $uri): bool {
+		$scheme = parse_url($uri, PHP_URL_SCHEME);
+		return $scheme === 'http' || $scheme === 'https';
 	}
 
 	/**
-	 * Encode v2 `targets` as JSON, filtering to known string values. v1
-	 * shares (no `targets` field) get stored as ''.
+	 * Encode `targets` as JSON, filtering to known values. Empty/missing
+	 * input falls back to the RFC default `["blank"]`.
 	 *
 	 * @param mixed $raw
 	 */
 	private function encodeTargets($raw): string {
 		if (!is_array($raw)) {
-			return '';
+			return '["blank"]';
 		}
 		$clean = array_values(array_filter(
 			$raw,
-			fn ($t) => is_string($t) && in_array($t, ['blank', 'iframe', 'popup'], true),
+			fn ($t) => is_string($t) && in_array($t, self::ALLOWED_TARGETS, true),
 		));
-		return $clean === [] ? '' : (string)json_encode($clean);
+		if ($clean === []) {
+			return '["blank"]';
+		}
+		return (string)json_encode($clean);
 	}
 }

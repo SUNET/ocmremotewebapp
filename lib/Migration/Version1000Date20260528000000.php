@@ -52,26 +52,34 @@ class Version1000Date20260528000000 extends SimpleMigrationStep {
 			'notnull' => true,
 			'length' => 2048,
 		]);
-		// v1 senders supply `viewMode`, v2 senders `permissions` (PR #367);
-		// the wire value is stored verbatim — enum is the union of both:
-		// `view`/`read`/`write`/`share`.
+		// Enum view/read/write/share (post-#367 `permissions`).
 		$table->addColumn('permissions', Types::STRING, [
 			'notnull' => true,
 			'length' => 16,
 			'default' => 'view',
 		]);
-		// JSON-encoded v2 `targets` array (subset of blank/iframe/popup).
-		// Empty string for v1 rows that don't carry the field. TEXT keeps
-		// us forward-compat if the spec adds more values; no default per
-		// the Oracle-CLOB rule.
+		// JSON-encoded `targets` array (subset of blank/iframe/popup).
+		// TEXT keeps us forward-compat if the spec adds more values; no
+		// default per the Oracle-CLOB rule. Entity initialises to '[]'.
 		$table->addColumn('targets', Types::TEXT, [
 			'notnull' => true,
 		]);
-		// TEXT, no default — Oracle doesn't allow defaults on CLOB. The
-		// entity initialises the field to '' so INSERTs always supply a
-		// value.
-		$table->addColumn('shared_secret', Types::TEXT, [
+		// Long-lived OAuth2 authorization code — the value the wire
+		// calls `sharedSecret`. Exchanged at the sender's tokenEndPoint
+		// for a short-lived JWT access_token (see access_token column).
+		// TEXT, no default per Oracle-CLOB rule.
+		$table->addColumn('refresh_token', Types::TEXT, [
 			'notnull' => true,
+		]);
+		// Cached JWT minted by TokenExchanger. NULL means "no cached
+		// token, exchange before next launch". Populated lazily on first
+		// launch and refreshed on expiry.
+		$table->addColumn('access_token', Types::TEXT, [
+			'notnull' => false,
+		]);
+		// JWT `exp` claim (unix seconds). NULL when access_token is NULL.
+		$table->addColumn('access_token_expires', Types::BIGINT, [
+			'notnull' => false,
 		]);
 		$table->addColumn('state', Types::STRING, [
 			'notnull' => true,
@@ -82,37 +90,15 @@ class Version1000Date20260528000000 extends SimpleMigrationStep {
 			'notnull' => true,
 			'default' => 0,
 		]);
-		$table->addColumn('protocol_version', Types::STRING, [
-			'notnull' => true,
-			'length' => 4,
-			'default' => 'v1',
-		]);
 		$table->addColumn('app_name', Types::STRING, [
 			'notnull' => true,
 			'length' => 255,
 			'default' => '',
 		]);
-		// TEXT for data: URIs (icons can be kilobytes); same no-default
-		// rule as shared_secret.
+		// TEXT for data: URIs (icons can be kilobytes); no default per
+		// Oracle-CLOB rule.
 		$table->addColumn('app_icon', Types::TEXT, [
 			'notnull' => true,
-		]);
-		$table->addColumn('token_endpoint', Types::STRING, [
-			'notnull' => true,
-			'length' => 512,
-			'default' => '',
-		]);
-		// Cache of the JWT minted via §4.10.3 token exchange. TEXT (no
-		// default per Oracle-CLOB rule). Populated lazily on launch
-		// under PR #365; unused for v1 / v2-without-#365 shares.
-		$table->addColumn('access_token', Types::TEXT, [
-			'notnull' => true,
-		]);
-		// JWT `exp` claim (unix seconds). 0 means "no cached token,
-		// must exchange before next launch".
-		$table->addColumn('access_token_expires_at', Types::BIGINT, [
-			'notnull' => true,
-			'default' => 0,
 		]);
 
 		$table->setPrimaryKey(['id']);

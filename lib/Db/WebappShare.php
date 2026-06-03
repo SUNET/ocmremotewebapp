@@ -25,24 +25,20 @@ use OCP\AppFramework\Db\Entity;
  * @method void setPermissions(string $permissions)
  * @method string getTargets()
  * @method void setTargets(string $targets)
- * @method string getSharedSecret()
- * @method void setSharedSecret(string $sharedSecret)
+ * @method string getRefreshToken()
+ * @method void setRefreshToken(string $refreshToken)
+ * @method ?string getAccessToken()
+ * @method void setAccessToken(?string $accessToken)
+ * @method ?int getAccessTokenExpires()
+ * @method void setAccessTokenExpires(?int $accessTokenExpires)
  * @method string getState()
  * @method void setState(string $state)
  * @method int getCreatedAt()
  * @method void setCreatedAt(int $createdAt)
- * @method string getProtocolVersion()
- * @method void setProtocolVersion(string $protocolVersion)
  * @method string getAppName()
  * @method void setAppName(string $appName)
  * @method string getAppIcon()
  * @method void setAppIcon(string $appIcon)
- * @method string getTokenEndpoint()
- * @method void setTokenEndpoint(string $tokenEndpoint)
- * @method string getAccessToken()
- * @method void setAccessToken(string $accessToken)
- * @method int getAccessTokenExpiresAt()
- * @method void setAccessTokenExpiresAt(int $accessTokenExpiresAt)
  */
 class WebappShare extends Entity {
 	protected string $localUid = '';
@@ -51,26 +47,47 @@ class WebappShare extends Entity {
 	protected string $remoteSharedBy = '';
 	protected string $resourceName = '';
 	protected string $uri = '';
-	// `view`/`read`/`write` from v1 senders (viewMode), or
-	// `view`/`read`/`write`/`share` from v2 senders (permissions). Wire
-	// value stored verbatim; no projection.
 	protected string $permissions = 'view';
-	// JSON-encoded array of v2 target hints (`blank`/`iframe`/`popup`).
-	// Empty string for v1 rows.
-	protected string $targets = '';
-	protected string $sharedSecret = '';
+	// JSON-encoded subset of blank/iframe/popup. Provider always
+	// initialises (RFC default is ["blank"]).
+	protected string $targets = '[]';
+	// The wire `sharedSecret`, stored verbatim. Long-lived OAuth2
+	// authorization code; never expose to the browser.
+	protected string $refreshToken = '';
+	// Cached JWT minted via TokenExchanger. NULL ⇒ exchange before launch.
+	protected ?string $accessToken = null;
+	// JWT `exp` claim, unix seconds. NULL ⇔ accessToken is NULL.
+	protected ?int $accessTokenExpires = null;
 	protected string $state = 'pending';
 	protected int $createdAt = 0;
-	protected string $protocolVersion = 'v1';
 	protected string $appName = '';
 	protected string $appIcon = '';
-	protected string $tokenEndpoint = '';
-	// access_token_expires_at = 0 means "no cached token, must exchange".
-	protected string $accessToken = '';
-	protected int $accessTokenExpiresAt = 0;
 
 	public function __construct() {
 		$this->addType('createdAt', 'integer');
-		$this->addType('accessTokenExpiresAt', 'integer');
+		$this->addType('accessTokenExpires', 'integer');
+	}
+
+	/**
+	 * Safe wire shape for both initial-state hydration and JSON API
+	 * output. Deliberately omits `refresh_token` and `access_token` —
+	 * those are server-internal and must never leak to the browser.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function toApiArray(): array {
+		return [
+			'id' => $this->getId(),
+			'token' => $this->getToken(),
+			'remoteOwner' => $this->getRemoteOwner(),
+			'remoteSharedBy' => $this->getRemoteSharedBy(),
+			'resourceName' => $this->getResourceName(),
+			'permissions' => $this->getPermissions(),
+			'targets' => $this->getTargets(),
+			'state' => $this->getState(),
+			'createdAt' => $this->getCreatedAt(),
+			'appName' => $this->getAppName(),
+			'appIcon' => $this->getAppIcon(),
+		];
 	}
 }

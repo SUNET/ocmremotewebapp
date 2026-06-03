@@ -18,6 +18,23 @@ class WebappShareMapper extends QBMapper {
 	}
 
 	/**
+	 * Uid-agnostic lookup. Callers that need uid-scoping must do so
+	 * themselves — used by the SHARE_UNSHARED federation path (where NC
+	 * is the authority and the uid isn't in scope) and by the REST API
+	 * (where the controller checks ownership before mutating).
+	 *
+	 * @throws \OCP\AppFramework\Db\DoesNotExistException
+	 * @throws \OCP\AppFramework\Db\MultipleObjectsReturnedException
+	 */
+	public function findById(int $id): WebappShare {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('*')
+			->from($this->getTableName())
+			->where($qb->expr()->eq('id', $qb->createNamedParameter($id, IQueryBuilder::PARAM_INT)));
+		return $this->findEntity($qb);
+	}
+
+	/**
 	 * @throws \OCP\AppFramework\Db\DoesNotExistException
 	 * @throws \OCP\AppFramework\Db\MultipleObjectsReturnedException
 	 */
