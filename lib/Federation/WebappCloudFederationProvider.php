@@ -64,11 +64,14 @@ class WebappCloudFederationProvider implements ICloudFederationProvider {
 		// v2 detection — per-share, not per-server. Any of the
 		// new fields tells us the sender speaks v2; otherwise treat as v1.
 		$isV2 = isset($webapp['permissions']) || isset($webapp['targets']) || isset($webapp['appName']);
-		$viewMode = $isV2
-			? $this->permissionsToViewMode((string)($webapp['permissions'] ?? 'view'))
-			: $this->normalizeViewMode((string)($webapp['viewMode'] ?? 'view'));
+		$permissions = $this->normalizePermissions(
+			$isV2
 
 		$token = $share->getShareSecret() ?: bin2hex(random_bytes(8));
+				? (string)($webapp['permissions'] ?? 'view')
+				: (string)($webapp['viewMode'] ?? 'view')
+		);
+		$targets = $this->encodeTargets($webapp['targets'] ?? null);
 
 		$entity = new WebappShare();
 		$entity->setLocalUid($localUid);
@@ -77,7 +80,8 @@ class WebappCloudFederationProvider implements ICloudFederationProvider {
 		$entity->setRemoteSharedBy((string)$share->getSharedBy());
 		$entity->setResourceName((string)$share->getResourceName());
 		$entity->setUri($uri);
-		$entity->setViewMode($viewMode);
+		$entity->setPermissions($permissions);
+		$entity->setTargets($targets);
 		$entity->setSharedSecret((string)($webapp['sharedSecret'] ?? ''));
 		$entity->setState('pending');
 		$entity->setCreatedAt(time());
@@ -147,21 +151,32 @@ class WebappCloudFederationProvider implements ICloudFederationProvider {
 		return null;
 	}
 
-	private function normalizeViewMode(string $viewMode): string {
-		return match ($viewMode) {
-			'view', 'read', 'write' => $viewMode,
+	/**
+	 * Accepts both the v1 `viewMode` enum (view/read/write) and the v2
+	 * `permissions` enum (adds `share`). The wire value is stored verbatim;
+	 * unknown values fall back to the safest option, `view`.
+	 */
+	private function normalizePermissions(string $value): string {
+		return match ($value) {
+			'view', 'read', 'write', 'share' => $value,
 			default => 'view',
 		};
 	}
 
 	/**
-	 * Project v2 `permissions` onto the v1 internal enum (view/read/write).
+	 * Encode v2 `targets` as JSON, filtering to known string values. v1
+	 * shares (no `targets` field) get stored as ''.
+	 *
+	 * @param mixed $raw
 	 */
-	private function permissionsToViewMode(string $permissions): string {
-		return match ($permissions) {
-			'view', 'read' => 'view',
-			'write', 'share' => 'write',
-			default => 'view',
-		};
+	private function encodeTargets($raw): string {
+		if (!is_array($raw)) {
+			return '';
+		}
+		$clean = array_values(array_filter(
+			$raw,
+			fn ($t) => is_string($t) && in_array($t, ['blank', 'iframe', 'popup'], true),
+		));
+		return $clean === [] ? '' : (string)json_encode($clean);
 	}
 }
