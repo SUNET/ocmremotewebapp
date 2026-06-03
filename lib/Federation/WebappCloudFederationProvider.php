@@ -66,12 +66,17 @@ class WebappCloudFederationProvider implements ICloudFederationProvider {
 		$isV2 = isset($webapp['permissions']) || isset($webapp['targets']) || isset($webapp['appName']);
 		$permissions = $this->normalizePermissions(
 			$isV2
-
-		$token = $share->getShareSecret() ?: bin2hex(random_bytes(8));
 				? (string)($webapp['permissions'] ?? 'view')
 				: (string)($webapp['viewMode'] ?? 'view')
 		);
 		$targets = $this->encodeTargets($webapp['targets'] ?? null);
+
+		// Fresh local URL key, deliberately NOT derived from sharedSecret —
+		// the launcher URL ends up in browser history, proxy logs, and
+		// Referer headers, so using the bearer here would leak it. The
+		// bearer goes in the `shared_secret` column only and is transported
+		// via POST body (v2) or destination-origin query string (v1).
+		$token = bin2hex(random_bytes(16));
 
 		$entity = new WebappShare();
 		$entity->setLocalUid($localUid);
