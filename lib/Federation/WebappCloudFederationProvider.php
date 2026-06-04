@@ -27,7 +27,7 @@ use Psr\Log\LoggerInterface;
 class WebappCloudFederationProvider implements ICloudFederationProvider {
 
 	private const ALLOWED_PERMISSIONS = ['view', 'read', 'write', 'share'];
-	private const ALLOWED_TARGETS = ['blank', 'iframe', 'popup'];
+	private const ALLOWED_TARGETS = ['blank', 'iframe', 'redirect'];
 
 	public function __construct(
 		private IUserManager $userManager,
@@ -67,10 +67,21 @@ class WebappCloudFederationProvider implements ICloudFederationProvider {
 			throw new ProviderCouldNotAddShareException('webapp.uri missing or not absolute', '', 400);
 		}
 
-		$permissions = (string)($webapp['permissions'] ?? '');
-		if (!in_array($permissions, self::ALLOWED_PERMISSIONS, true)) {
-			throw new ProviderCouldNotAddShareException('webapp.permissions missing or invalid', '', 400);
+		// Per OCM-API#368 `permissions` is a non-empty array of
+		// view/read/write/share. Filter to known values and reject when
+		// nothing survives.
+		$rawPermissions = $webapp['permissions'] ?? null;
+		if (!is_array($rawPermissions)) {
+			throw new ProviderCouldNotAddShareException('webapp.permissions must be an array', '', 400);
 		}
+		$permissionsList = array_values(array_filter(
+			$rawPermissions,
+			fn ($p) => is_string($p) && in_array($p, self::ALLOWED_PERMISSIONS, true),
+		));
+		if ($permissionsList === []) {
+			throw new ProviderCouldNotAddShareException('webapp.permissions must contain at least one of view/read/write/share', '', 400);
+		}
+		$permissions = (string)json_encode($permissionsList);
 
 		$refreshToken = (string)($webapp['sharedSecret'] ?? '');
 		if ($refreshToken === '') {

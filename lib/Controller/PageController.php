@@ -209,14 +209,21 @@ class PageController extends Controller {
 	}
 
 	/**
-	 * Tighten iframe sandbox by permission. `view` shares cannot submit
-	 * forms inside the iframe (read-only); higher permissions can. Note
-	 * the launcher's own form POST is outside the iframe, so this
+	 * Tighten iframe sandbox by permission. `view`-only shares cannot
+	 * submit forms inside the iframe; anything else (read/write/share)
+	 * can. The launcher's own form POST is outside the iframe, so this
 	 * restriction does not block the initial load.
+	 *
+	 * `permissions` is the JSON-encoded array stored on the row per
+	 * OCM-API#368 (e.g. `["read"]`).
 	 */
 	private function sandboxFor(string $permissions): string {
 		$base = 'allow-scripts allow-same-origin allow-popups';
-		return $permissions === 'view' ? $base : $base . ' allow-forms';
+		$list = json_decode($permissions, true);
+		if (!is_array($list)) {
+			$list = [$permissions];
+		}
+		return $list === ['view'] ? $base : $base . ' allow-forms';
 	}
 
 }
