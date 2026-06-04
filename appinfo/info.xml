@@ -20,6 +20,7 @@
 			<name>OCM Remote WebApp</name>
 			<route>ocmremotewebapp.page.index</route>
 			<icon>app.svg</icon>
+			<order>81</order>
 			<type>link</type>
 		</navigation>
 	</navigations>
