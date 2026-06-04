@@ -37,8 +37,8 @@ use OCP\AppFramework\Db\Entity;
  * @method void setCreatedAt(int $createdAt)
  * @method string getAppName()
  * @method void setAppName(string $appName)
- * @method string getAppIcon()
- * @method void setAppIcon(string $appIcon)
+ * @method ?string getAppIcon()
+ * @method void setAppIcon(?string $appIcon)
  */
 class WebappShare extends Entity {
 	protected string $localUid = '';
@@ -61,7 +61,12 @@ class WebappShare extends Entity {
 	protected string $state = 'pending';
 	protected int $createdAt = 0;
 	protected string $appName = '';
-	protected string $appIcon = '';
+	// Nullable so setAppIcon('') always registers as a change: NC's Entity
+	// setter skips marking a field updated when the new value === the
+	// current one, so a default of '' would make setAppIcon('') a no-op and
+	// the column (TEXT, no DB default) would be omitted from the INSERT and
+	// hit a NOT NULL violation. Default null sidesteps that.
+	protected ?string $appIcon = null;
 
 	public function __construct() {
 		$this->addType('createdAt', 'integer');

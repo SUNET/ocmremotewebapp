@@ -96,9 +96,11 @@ class Version1000Date20260528000000 extends SimpleMigrationStep {
 			'default' => '',
 		]);
 		// TEXT for data: URIs (icons can be kilobytes); no default per
-		// Oracle-CLOB rule.
+		// Oracle-CLOB rule. Nullable because the icon is optional and TEXT
+		// cannot carry a DB default — a NOT NULL column with no default
+		// would reject inserts that omit the (frequently empty) icon.
 		$table->addColumn('app_icon', Types::TEXT, [
-			'notnull' => true,
+			'notnull' => false,
 		]);
 
 		$table->setPrimaryKey(['id']);
