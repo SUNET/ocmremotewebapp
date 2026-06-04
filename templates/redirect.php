@@ -13,6 +13,9 @@ declare(strict_types=1);
  * @var array{uri:string, accessToken:string, appName:string} $_
  */
 $title = $_['appName'] !== '' ? $_['appName'] : $l->t('Opening shared webapp');
+// Stamp the inline auto-submit with NC's per-request CSP nonce, else
+// strict-dynamic blocks it and the redirect never fires.
+$nonce = \OCP\Server::get(\OC\Security\CSP\ContentSecurityPolicyNonceManager::class)->getNonce();
 ?><!DOCTYPE html>
 <html lang="<?php p($l->getLanguageCode()); ?>">
 <head>
@@ -32,6 +35,6 @@ $title = $_['appName'] !== '' ? $_['appName'] : $l->t('Opening shared webapp');
 			<button type="submit"><?php p($l->t('Continue')); ?></button>
 		</noscript>
 	</form>
-	<script>document.getElementById('ocm-launch').submit();</script>
+	<script nonce="<?php p($nonce); ?>">document.getElementById('ocm-launch').submit();</script>
 </body>
 </html>

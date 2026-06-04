@@ -16,6 +16,9 @@ declare(strict_types=1);
  * @var array{uri:string, accessToken:string, sandbox:string, appName:string} $_
  */
 $title = $_['appName'] !== '' ? $_['appName'] : 'OCM Remote WebApp';
+// NC's default CSP is strict-dynamic + a per-request nonce, so an inline
+// script without that nonce is blocked. Stamp it so the auto-submit runs.
+$nonce = \OCP\Server::get(\OC\Security\CSP\ContentSecurityPolicyNonceManager::class)->getNonce();
 ?><!DOCTYPE html>
 <html lang="<?php p($l->getLanguageCode()); ?>">
 <head>
@@ -37,6 +40,6 @@ $title = $_['appName'] !== '' ? $_['appName'] : 'OCM Remote WebApp';
 	<form id="ocm-launch" method="POST" action="<?php p($_['uri']); ?>" target="ocm-target" enctype="application/x-www-form-urlencoded">
 		<input type="hidden" name="access_token" value="<?php p($_['accessToken']); ?>">
 	</form>
-	<script>document.getElementById('ocm-launch').submit();</script>
+	<script nonce="<?php p($nonce); ?>">document.getElementById('ocm-launch').submit();</script>
 </body>
 </html>

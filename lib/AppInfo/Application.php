@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\OCMRemoteWebApp\AppInfo;
 
 use OCA\OCMRemoteWebApp\Federation\WebappCloudFederationProvider;
+use OCA\OCMRemoteWebApp\Listener\CSPListener;
 use OCA\OCMRemoteWebApp\Listener\LocalOCMDiscoveryEventListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
@@ -13,6 +14,7 @@ use OCP\AppFramework\Bootstrap\IRegistrationContext;
 use OCP\Federation\Exceptions\ProviderAlreadyExistsException;
 use OCP\Federation\ICloudFederationProviderManager;
 use OCP\OCM\Events\LocalOCMDiscoveryEvent;
+use OCP\Security\CSP\AddContentSecurityPolicyEvent;
 
 class Application extends App implements IBootstrap {
 	public const APP_ID = 'ocmremotewebapp';
@@ -30,6 +32,7 @@ class Application extends App implements IBootstrap {
 
 	public function register(IRegistrationContext $context): void {
 		$context->registerEventListener(LocalOCMDiscoveryEvent::class, LocalOCMDiscoveryEventListener::class);
+		$context->registerEventListener(AddContentSecurityPolicyEvent::class, CSPListener::class);
 	}
 
 	public function boot(IBootContext $context): void {
