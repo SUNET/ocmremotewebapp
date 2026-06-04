@@ -18,7 +18,7 @@ class Application extends App implements IBootstrap {
 	public const APP_ID = 'ocmremotewebapp';
 
 	/** OCM resource type advertised via /.well-known/ocm. */
-	public const WEBAPP_RESOURCE_TYPE = 'webapp';
+	public const WEBAPP_RESOURCE_TYPE = 'folder';
 
 	/** User-facing label in NC's federation provider registry. */
 	public const WEBAPP_DISPLAY_NAME = 'OCM Remote WebApp';
