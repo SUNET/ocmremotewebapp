@@ -68,6 +68,17 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 	public function shareReceived(ICloudFederationShare $share): string {
 		$parsed = $this->parseShare($share);
 
+		// Forward the webdav protocol entry to NC's built-in "file" provider
+		// so the shared folder also appears as a federated Files mount. The
+		// file provider auto-accepts the mount for trusted servers and
+		// otherwise leaves it pending. We mirror that decision onto the
+		// webapp share so the two — which share one sharedSecret and are
+		// really one logical share — stay in lockstep.
+		$fileShareId = $this->forwardWebdavToFileProvider($share);
+		$accepted = $fileShareId !== null
+			&& $fileShareId !== ''
+			&& $this->isAutoAcceptedFromTrustedServer((string)$share->getOwner());
+
 		$entity = new WebappShare();
 		$entity->setLocalUid($parsed['localUid']);
 		$entity->setToken(bin2hex(random_bytes(16)));
@@ -80,26 +91,52 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 		$entity->setRefreshToken($parsed['refreshToken']);
 		// access_token / access_token_expires intentionally left NULL —
 		// TokenExchanger mints them lazily on first launch.
-		$entity->setState('pending');
+		$entity->setState($accepted ? 'accepted' : 'pending');
 		$entity->setCreatedAt(time());
 		$entity->setAppName($parsed['appName']);
 		$entity->setAppIcon($parsed['appIcon']);
-
-		$saved = $this->mapper->insert($entity);
-		$this->logger->info('Stored inbound webapp share for {user}', ['user' => $parsed['localUid']]);
-
-		// Forward the webdav protocol entry to NC's built-in "file" provider
-		// so the shared folder also appears as a federated Files mount. The
-		// mount is created pending (not auto-accepted); accepting the webapp
-		// share in the UI accepts this mount too. We persist its id so the
-		// accept/decline actions can act on both together.
-		$fileShareId = $this->forwardWebdavToFileProvider($share);
 		if ($fileShareId !== null && $fileShareId !== '') {
-			$saved->setFileShareId($fileShareId);
-			$this->mapper->update($saved);
+			$entity->setFileShareId($fileShareId);
 		}
 
+		$saved = $this->mapper->insert($entity);
+		$this->logger->info('Stored inbound webapp share for {user} (state={state})', [
+			'user' => $parsed['localUid'],
+			'state' => $saved->getState(),
+		]);
+
 		return (string)$saved->getId();
+	}
+
+	/**
+	 * Mirror NC's federated-files auto-accept rule: accept automatically
+	 * when "auto-accept from trusted servers" is on and the owner's server
+	 * is trusted. Same condition CloudFederationProviderFiles applies to the
+	 * webdav mount, so both halves of the share resolve identically.
+	 */
+	private function isAutoAcceptedFromTrustedServer(string $ownerFederatedId): bool {
+		$at = strrpos($ownerFederatedId, '@');
+		if ($at === false) {
+			return false;
+		}
+		$remote = substr($ownerFederatedId, $at + 1);
+		if ($remote === '') {
+			return false;
+		}
+		try {
+			$fsp = \OCP\Server::get(\OCA\FederatedFileSharing\FederatedShareProvider::class);
+			if (!$fsp->isFederatedTrustedShareAutoAccept()) {
+				return false;
+			}
+			if (!class_exists(\OCA\Federation\TrustedServers::class)) {
+				return false;
+			}
+			$trusted = \OCP\Server::get(\OCA\Federation\TrustedServers::class);
+			return $trusted->isTrustedServer($remote);
+		} catch (\Throwable $e) {
+			$this->logger->debug('trusted-server auto-accept check failed: {msg}', ['msg' => $e->getMessage()]);
+			return false;
+		}
 	}
 
 	/**
