@@ -8,9 +8,10 @@ use OCA\OCMRemoteWebApp\AppInfo\Application;
 use OCA\OCMRemoteWebApp\Db\WebappShare;
 use OCA\OCMRemoteWebApp\Db\WebappShareMapper;
 use OCP\AppFramework\Db\DoesNotExistException;
+use OCP\Federation\Exceptions\BadRequestException;
 use OCP\Federation\Exceptions\ProviderCouldNotAddShareException;
-use OCP\Federation\ICloudFederationProvider;
 use OCP\Federation\ICloudFederationShare;
+use OCP\Federation\IValidationAwareCloudFederationProvider;
 use OCP\IUserManager;
 use Psr\Log\LoggerInterface;
 
@@ -24,7 +25,7 @@ use Psr\Log\LoggerInterface;
  * Accepts only the post-#367 wire shape: payload in `protocol.webapp`,
  * `permissions` enum, absolute `uri`. v1 envelopes are rejected.
  */
-class WebappCloudFederationProvider implements ICloudFederationProvider {
+class WebappCloudFederationProvider implements IValidationAwareCloudFederationProvider {
 
 	private const ALLOWED_PERMISSIONS = ['view', 'read', 'write', 'share'];
 	private const ALLOWED_TARGETS = ['blank', 'iframe', 'redirect'];
@@ -45,11 +46,66 @@ class WebappCloudFederationProvider implements ICloudFederationProvider {
 	}
 
 	/**
+	 * Side-effect-free validation of the share envelope. Cloud federation
+	 * API calls this on every incoming /ocm/shares request before
+	 * shareReceived(); see {@see IValidationAwareCloudFederationProvider}.
+	 *
+	 * @throws BadRequestException If the envelope is structurally invalid.
+	 * @throws ProviderCouldNotAddShareException For other rejections.
+	 */
+	public function validateShare(ICloudFederationShare $share): void {
+		$this->parseShare($share);
+	}
+
+	/**
 	 * @throws ProviderCouldNotAddShareException
 	 */
 	public function shareReceived(ICloudFederationShare $share): string {
+		$parsed = $this->parseShare($share);
+
+		$entity = new WebappShare();
+		$entity->setLocalUid($parsed['localUid']);
+		$entity->setToken(bin2hex(random_bytes(16)));
+		$entity->setRemoteOwner((string)$share->getOwner());
+		$entity->setRemoteSharedBy((string)$share->getSharedBy());
+		$entity->setResourceName((string)$share->getResourceName());
+		$entity->setUri($parsed['uri']);
+		$entity->setPermissions($parsed['permissions']);
+		$entity->setTargets($parsed['targets']);
+		$entity->setRefreshToken($parsed['refreshToken']);
+		// access_token / access_token_expires intentionally left NULL —
+		// TokenExchanger mints them lazily on first launch.
+		$entity->setState('pending');
+		$entity->setCreatedAt(time());
+		$entity->setAppName($parsed['appName']);
+		$entity->setAppIcon($parsed['appIcon']);
+
+		$saved = $this->mapper->insert($entity);
+		$this->logger->info('Stored inbound webapp share for {user}', ['user' => $parsed['localUid']]);
+
+		return (string)$saved->getId();
+	}
+
+	/**
+	 * Pure parser: validates the share envelope and returns the fields
+	 * shareReceived() will persist. No DB writes, no random tokens — safe
+	 * to call from validateShare() as well.
+	 *
+	 * @return array{
+	 *     localUid: string,
+	 *     uri: string,
+	 *     permissions: string,
+	 *     targets: string,
+	 *     refreshToken: string,
+	 *     appName: string,
+	 *     appIcon: string,
+	 * }
+	 * @throws BadRequestException
+	 * @throws ProviderCouldNotAddShareException
+	 */
+	private function parseShare(ICloudFederationShare $share): array {
 		if ($share->getResourceType() !== Application::WEBAPP_RESOURCE_TYPE) {
-			throw new ProviderCouldNotAddShareException('Unsupported resource type', '', 400);
+			throw new BadRequestException(['resourceType']);
 		}
 
 		$localUid = $this->resolveLocalUser($share->getShareWith());
@@ -59,12 +115,12 @@ class WebappCloudFederationProvider implements ICloudFederationProvider {
 
 		$webapp = $this->extractWebappEntry($share->getProtocol());
 		if ($webapp === null) {
-			throw new ProviderCouldNotAddShareException('webapp protocol entry missing', '', 400);
+			throw new BadRequestException(['protocol.webapp']);
 		}
 
 		$uri = (string)($webapp['uri'] ?? '');
 		if ($uri === '' || !$this->isAbsoluteUri($uri)) {
-			throw new ProviderCouldNotAddShareException('webapp.uri missing or not absolute', '', 400);
+			throw new BadRequestException(['protocol.webapp.uri']);
 		}
 
 		// Per OCM-API#368 `permissions` is a non-empty array of
@@ -72,48 +128,30 @@ class WebappCloudFederationProvider implements ICloudFederationProvider {
 		// nothing survives.
 		$rawPermissions = $webapp['permissions'] ?? null;
 		if (!is_array($rawPermissions)) {
-			throw new ProviderCouldNotAddShareException('webapp.permissions must be an array', '', 400);
+			throw new BadRequestException(['protocol.webapp.permissions']);
 		}
 		$permissionsList = array_values(array_filter(
 			$rawPermissions,
 			fn ($p) => is_string($p) && in_array($p, self::ALLOWED_PERMISSIONS, true),
 		));
 		if ($permissionsList === []) {
-			throw new ProviderCouldNotAddShareException('webapp.permissions must contain at least one of view/read/write/share', '', 400);
+			throw new BadRequestException(['protocol.webapp.permissions']);
 		}
-		$permissions = (string)json_encode($permissionsList);
 
 		$refreshToken = (string)($webapp['sharedSecret'] ?? '');
 		if ($refreshToken === '') {
-			throw new ProviderCouldNotAddShareException('webapp.sharedSecret missing', '', 400);
+			throw new BadRequestException(['protocol.webapp.sharedSecret']);
 		}
 
-		$targets = $this->encodeTargets($webapp['targets'] ?? null);
-
-		// Fresh local URL key
-		$token = bin2hex(random_bytes(16));
-
-		$entity = new WebappShare();
-		$entity->setLocalUid($localUid);
-		$entity->setToken($token);
-		$entity->setRemoteOwner((string)$share->getOwner());
-		$entity->setRemoteSharedBy((string)$share->getSharedBy());
-		$entity->setResourceName((string)$share->getResourceName());
-		$entity->setUri($uri);
-		$entity->setPermissions($permissions);
-		$entity->setTargets($targets);
-		$entity->setRefreshToken($refreshToken);
-		// access_token / access_token_expires intentionally left NULL —
-		// TokenExchanger mints them lazily on first launch.
-		$entity->setState('pending');
-		$entity->setCreatedAt(time());
-		$entity->setAppName((string)($webapp['appName'] ?? ''));
-		$entity->setAppIcon((string)($webapp['appIcon'] ?? ''));
-
-		$saved = $this->mapper->insert($entity);
-		$this->logger->info('Stored inbound webapp share for {user}', ['user' => $localUid]);
-
-		return (string)$saved->getId();
+		return [
+			'localUid' => $localUid,
+			'uri' => $uri,
+			'permissions' => (string)json_encode($permissionsList),
+			'targets' => $this->encodeTargets($webapp['targets'] ?? null),
+			'refreshToken' => $refreshToken,
+			'appName' => (string)($webapp['appName'] ?? ''),
+			'appIcon' => (string)($webapp['appIcon'] ?? ''),
+		];
 	}
 
 	/**
