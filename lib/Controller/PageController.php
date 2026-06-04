@@ -69,6 +69,7 @@ class PageController extends Controller {
 	 * `access_token` JWT is cached, then renders the surface for the
 	 * requested target (validated against what both ends support).
 	 */
+	#[NoCSRFRequired]
 	#[NoAdminRequired]
 	#[OpenAPI(OpenAPI::SCOPE_IGNORE)]
 	public function open(string $token, string $target = ''): Response {
