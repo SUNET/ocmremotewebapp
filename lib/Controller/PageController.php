@@ -19,16 +19,14 @@ use OCP\AppFramework\Http\NotFoundResponse;
 use OCP\AppFramework\Http\Response;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Services\IInitialState;
-use OCP\IConfig;
 use OCP\IRequest;
 use Psr\Log\LoggerInterface;
 
 class PageController extends Controller {
 
-	private const DISPLAY_MODES = ['iframe', 'popup', 'redirect'];
-	private const DEFAULT_DISPLAY_MODE = 'redirect';
-	private const MODE_TO_WIRE = ['iframe' => 'iframe', 'popup' => 'popup', 'redirect' => 'blank'];
-	private const WIRE_TO_MODE = ['iframe' => 'iframe', 'popup' => 'popup', 'blank' => 'redirect'];
+	// Wire targets (OCM-API#368) this receiver can render. Ordered by
+	// preference so the first one that a share also offers is the default.
+	private const SUPPORTED_TARGETS = ['iframe', 'blank', 'redirect'];
 	// Re-exchange when the cached JWT has less than this much life left,
 	// so it doesn't expire mid-redirect.
 	private const ACCESS_TOKEN_SLACK_SECONDS = 30;
@@ -39,7 +37,6 @@ class PageController extends Controller {
 		private ?string $userId,
 		private IInitialState $initialState,
 		private WebappShareMapper $mapper,
-		private IConfig $config,
 		private TokenExchanger $tokenExchanger,
 		private LoggerInterface $logger,
 	) {
@@ -48,35 +45,33 @@ class PageController extends Controller {
 
 	/**
 	 * App landing page. Hydrates the Vue front-end with the user's share
-	 * list and display-mode preference so first paint doesn't need a
-	 * round-trip.
+	 * list and the targets this receiver supports so first paint doesn't
+	 * need a round-trip.
 	 */
 	#[NoCSRFRequired]
 	#[NoAdminRequired]
 	#[OpenAPI(OpenAPI::SCOPE_IGNORE)]
 	public function index(): TemplateResponse {
 		$uid = $this->userId ?? '';
-		$displayMode = $this->resolveDisplayMode($uid);
 
 		$shares = $uid !== ''
 			? array_map(fn ($s) => $s->toApiArray(), $this->mapper->findAllByUid($uid))
 			: [];
 
 		$this->initialState->provideInitialState('shares', $shares);
-		$this->initialState->provideInitialState('displayMode', $displayMode);
-		$this->initialState->provideInitialState('displayModes', self::DISPLAY_MODES);
+		$this->initialState->provideInitialState('supportedTargets', self::SUPPORTED_TARGETS);
 
 		return new TemplateResponse(Application::APP_ID, 'index');
 	}
 
 	/**
 	 * Launcher. Resolves the share by (uid, token), ensures a fresh
-	 * `access_token` JWT is cached, then renders the POST-form template
-	 * for the effective display mode.
+	 * `access_token` JWT is cached, then renders the surface for the
+	 * requested target (validated against what both ends support).
 	 */
 	#[NoAdminRequired]
 	#[OpenAPI(OpenAPI::SCOPE_IGNORE)]
-	public function open(string $token): Response {
+	public function open(string $token, string $target = ''): Response {
 		$uid = $this->userId ?? '';
 		if ($uid === '' || $token === '') {
 			return new NotFoundResponse();
@@ -105,11 +100,12 @@ class PageController extends Controller {
 			);
 		}
 
-		$mode = $this->effectiveMode($uid, $share);
+		$resolved = $this->resolveTarget($share, $target);
 
-		return match ($mode) {
+		// 'blank' (open in a new window/tab) is initiated client-side; the
+		// new tab still loads a same-tab redirect surface here.
+		return match ($resolved) {
 			'iframe' => $this->renderEmbed($share, $accessToken),
-			'popup' => $this->renderPopup($share, $accessToken),
 			default => $this->renderRedirect($share, $accessToken),
 		};
 	}
@@ -160,52 +156,25 @@ class PageController extends Controller {
 		);
 	}
 
-	private function renderPopup(WebappShare $share, string $accessToken): TemplateResponse {
-		return new TemplateResponse(
-			Application::APP_ID,
-			'popup',
-			[
-				'uri' => $share->getUri(),
-				'accessToken' => $accessToken,
-				'appName' => $share->getAppName(),
-				'resourceName' => $share->getResourceName(),
-			],
-			TemplateResponse::RENDER_AS_USER,
-		);
-	}
-
 	/**
-	 * Effective launch mode = user preference, narrowed by the share's
-	 * `targets` array. If the user's pref isn't offered, fall back to
-	 * the first sender-offered target (sender intent wins). Both sides
-	 * are guaranteed present: `targets` is always JSON on the row, and
-	 * the user pref always falls back to the default.
+	 * Pick the wire target to render: the requested one when both this
+	 * receiver and the share offer it, else the first target they share,
+	 * else a safe fallback. `targets` on the row is the sender's offered
+	 * set (OCM-API#368 wire vocabulary: blank/redirect/iframe).
 	 */
-	private function effectiveMode(string $uid, WebappShare $share): string {
-		$pref = $this->resolveDisplayMode($uid);
-		$targets = json_decode($share->getTargets(), true);
-		if (!is_array($targets) || $targets === []) {
-			return $pref;
+	private function resolveTarget(WebappShare $share, string $requested): string {
+		$shareTargets = json_decode($share->getTargets(), true);
+		if (!is_array($shareTargets) || $shareTargets === []) {
+			$shareTargets = self::SUPPORTED_TARGETS;
 		}
-		$wirePref = self::MODE_TO_WIRE[$pref] ?? $pref;
-		if (in_array($wirePref, $targets, true)) {
-			return $pref;
+		$available = array_values(array_intersect(self::SUPPORTED_TARGETS, $shareTargets));
+		if ($available === []) {
+			return 'redirect';
 		}
-		$first = (string)$targets[0];
-		return self::WIRE_TO_MODE[$first] ?? self::DEFAULT_DISPLAY_MODE;
-	}
-
-	private function resolveDisplayMode(string $uid): string {
-		if ($uid === '') {
-			return self::DEFAULT_DISPLAY_MODE;
+		if ($requested !== '' && in_array($requested, $available, true)) {
+			return $requested;
 		}
-		$stored = $this->config->getUserValue(
-			$uid,
-			Application::APP_ID,
-			'displayMode',
-			self::DEFAULT_DISPLAY_MODE,
-		);
-		return in_array($stored, self::DISPLAY_MODES, true) ? $stored : self::DEFAULT_DISPLAY_MODE;
+		return $available[0];
 	}
 
 	/**

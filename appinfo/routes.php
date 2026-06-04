@@ -29,6 +29,5 @@ return [
 		['name' => 'received#list',     'url' => '/api/v1/shares',                 'verb' => 'GET'],
 		['name' => 'received#accept',   'url' => '/api/v1/shares/{id}/accept',     'verb' => 'POST'],
 		['name' => 'received#decline',  'url' => '/api/v1/shares/{id}/decline',    'verb' => 'POST'],
-		['name' => 'config#setDisplay', 'url' => '/api/v1/config/display-mode',    'verb' => 'PUT'],
 	],
 ];

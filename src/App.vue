@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import NcAppContent from '@nextcloud/vue/components/NcAppContent'
 import NcButton from '@nextcloud/vue/components/NcButton'
 import NcContent from '@nextcloud/vue/components/NcContent'
@@ -17,10 +17,14 @@ import axios from '@nextcloud/axios'
 
 const APP = 'ocmremotewebapp'
 
-/**
- * Parse a value the backend may hand us either as a JSON array string
- * (e.g. '["read"]') or already as an array. Returns a string[].
- */
+// Human labels for the OCM wire targets (blank/redirect/iframe).
+const TARGET_LABELS = {
+	iframe: t(APP, 'Embedded'),
+	blank: t(APP, 'New tab'),
+	redirect: t(APP, 'This tab'),
+}
+
+/** Parse a JSON-array string (or pass through an array) to string[]. */
 function asList(value) {
 	if (Array.isArray(value)) {
 		return value
@@ -36,18 +40,26 @@ function asList(value) {
 	return []
 }
 
+// What this receiver can render, in preference order.
+const supportedTargets = ref(loadState(APP, 'supportedTargets', ['iframe', 'blank', 'redirect']))
+
 function normalise(share) {
+	const shareTargets = asList(share.targets)
+	// Offer only targets both ends support, preserving our preference order.
+	const available = supportedTargets.value.filter((tg) => shareTargets.includes(tg))
 	return {
 		...share,
 		permissionList: asList(share.permissions),
-		targetList: asList(share.targets),
+		availableTargets: available.length ? available : ['redirect'],
 	}
 }
 
 const shares = ref(loadState(APP, 'shares', []).map(normalise))
-const displayModes = ref(loadState(APP, 'displayModes', ['iframe', 'popup', 'redirect']))
-const displayMode = ref(loadState(APP, 'displayMode', 'iframe'))
 const busyId = ref(null)
+// Per-share chosen target, keyed by share id; defaults to the first
+// available target for that share.
+const chosenTarget = reactive({})
+shares.value.forEach((s) => { chosenTarget[s.id] = s.availableTargets[0] })
 
 const hasShares = computed(() => shares.value.length > 0)
 
@@ -55,16 +67,27 @@ function senderOf(share) {
 	return share.remoteSharedBy || share.remoteOwner || ''
 }
 
-function openUrl(share) {
-	return generateUrl('/apps/{app}/ocm/open/{token}', { app: APP, token: share.token })
+function targetOptions(share) {
+	return share.availableTargets.map((value) => ({ value, label: TARGET_LABELS[value] ?? value }))
+}
+
+function selectedOption(share) {
+	const value = chosenTarget[share.id] ?? share.availableTargets[0]
+	return { value, label: TARGET_LABELS[value] ?? value }
+}
+
+function onTargetChange(share, option) {
+	chosenTarget[share.id] = option?.value ?? share.availableTargets[0]
 }
 
 function launch(share) {
-	const url = openUrl(share)
-	// The server renders the right surface (iframe/popup/redirect) for the
-	// stored display mode. Popups want a fresh tab; the others take over the
-	// current one.
-	if (displayMode.value === 'popup') {
+	const target = chosenTarget[share.id] ?? share.availableTargets[0]
+	const url = generateUrl('/apps/{app}/ocm/open/{token}?target={target}', {
+		app: APP,
+		token: share.token,
+		target,
+	})
+	if (target === 'blank') {
 		window.open(url, '_blank', 'noopener')
 	} else {
 		window.location.href = url
@@ -80,6 +103,7 @@ async function accept(share) {
 		const idx = shares.value.findIndex((s) => s.id === share.id)
 		if (idx !== -1) {
 			shares.value.splice(idx, 1, normalise(data))
+			chosenTarget[share.id] = shares.value[idx].availableTargets[0]
 		}
 		showSuccess(t(APP, 'Share accepted'))
 	} catch (e) {
@@ -105,42 +129,13 @@ async function decline(share) {
 		busyId.value = null
 	}
 }
-
-async function onDisplayModeChange(mode) {
-	if (!mode || mode === displayMode.value) {
-		return
-	}
-	const previous = displayMode.value
-	displayMode.value = mode
-	try {
-		await axios.put(generateUrl('/apps/{app}/api/v1/config/display-mode', { app: APP }), {
-			displayMode: mode,
-		})
-	} catch (e) {
-		console.error(e)
-		displayMode.value = previous
-		showError(t(APP, 'Could not save the display mode'))
-	}
-}
 </script>
 
 <template>
 	<NcContent app-name="ocmremotewebapp">
 		<NcAppContent>
 			<div :class="$style.wrapper">
-				<div :class="$style.header">
-					<h2>{{ t('ocmremotewebapp', 'Remote web app shares') }}</h2>
-					<div :class="$style.modePicker">
-						<label :for="'ocmrw-display-mode'">{{ t('ocmremotewebapp', 'Open shares in') }}</label>
-						<NcSelect
-							input-id="ocmrw-display-mode"
-							:options="displayModes"
-							:model-value="displayMode"
-							:clearable="false"
-							:searchable="false"
-							@update:model-value="onDisplayModeChange" />
-					</div>
-				</div>
+				<h2>{{ t('ocmremotewebapp', 'Remote web app shares') }}</h2>
 
 				<NcEmptyContent
 					v-if="!hasShares"
@@ -171,6 +166,16 @@ async function onDisplayModeChange(mode) {
 						</div>
 						<div :class="$style.actions">
 							<template v-if="share.state === 'accepted'">
+								<NcSelect
+									v-if="share.availableTargets.length > 1"
+									:class="$style.targetSelect"
+									:options="targetOptions(share)"
+									:model-value="selectedOption(share)"
+									label="label"
+									:clearable="false"
+									:searchable="false"
+									:aria-label-combobox="t('ocmremotewebapp', 'Open in')"
+									@update:model-value="(opt) => onTargetChange(share, opt)" />
 								<NcButton
 									type="primary"
 									:disabled="busyId === share.id"
@@ -220,35 +225,17 @@ async function onDisplayModeChange(mode) {
 
 <style module>
 .wrapper {
-	max-width: 800px;
+	max-width: 820px;
 	margin: 0 auto;
 	padding: 16px;
 	width: 100%;
-}
-
-.header {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 16px;
-	flex-wrap: wrap;
-	margin-bottom: 16px;
-}
-
-.modePicker {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-}
-
-.modePicker label {
-	color: var(--color-text-maxcontrast);
 }
 
 .list {
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
+	margin-top: 16px;
 }
 
 .item {
@@ -314,7 +301,12 @@ async function onDisplayModeChange(mode) {
 
 .actions {
 	display: flex;
+	align-items: center;
 	gap: 8px;
 	flex: 0 0 auto;
+}
+
+.targetSelect {
+	min-width: 140px;
 }
 </style>
