@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\OCMRemoteWebApp\Controller;
 
+use OCA\OCMRemoteWebApp\Db\WebappShare;
 use OCA\OCMRemoteWebApp\Db\WebappShareMapper;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Db\DoesNotExistException;
@@ -12,11 +13,15 @@ use OCP\AppFramework\Http\Attribute\NoAdminRequired;
 use OCP\AppFramework\Http\Attribute\OpenAPI;
 use OCP\AppFramework\Http\DataResponse;
 use OCP\IRequest;
+use OCP\IUserManager;
+use OCP\Server;
+use Psr\Log\LoggerInterface;
 
 /**
- * Vue-app-internal JSON API for the share list. Accept/decline mutate
- * local state only — we own no IShare, so there's no OCM
- * SHARE_ACCEPTED/SHARE_DECLINED notification to originate
+ * Vue-app-internal JSON API for the share list. Accept/decline mutate our
+ * own record and, when the webapp share carries a paired federated Files
+ * mount (file_share_id), the NC external share too — so the user accepts
+ * or removes both in a single action.
  */
 class ReceivedController extends Controller {
 
@@ -25,6 +30,8 @@ class ReceivedController extends Controller {
 		IRequest $request,
 		private ?string $userId,
 		private WebappShareMapper $mapper,
+		private IUserManager $userManager,
+		private LoggerInterface $logger,
 	) {
 		parent::__construct($appName, $request);
 	}
@@ -64,6 +71,8 @@ class ReceivedController extends Controller {
 			$share->setState('accepted');
 			$this->mapper->update($share);
 		}
+		// Mount the paired federated Files share, if any.
+		$this->actOnFileShare($share, 'accept');
 		return new DataResponse($share->toApiArray());
 	}
 
@@ -74,12 +83,61 @@ class ReceivedController extends Controller {
 		if ($uid === '') {
 			return new DataResponse([], Http::STATUS_UNAUTHORIZED);
 		}
-		// Uid-scoped delete — if the row doesn't belong to this user, the
-		// DELETE simply matches zero rows. No outbound notification,
-		// since we own no IShare lifecycle. Row is removed (not kept as a
-		// `declined` tombstone) — re-sends from the same origin are
-		// treated as fresh.
+		// Look the row up first so we can drop the paired Files mount too.
+		// Uid check prevents acting on another user's share; a missing or
+		// foreign row is a no-op (idempotent decline).
+		try {
+			$share = $this->mapper->findById($id);
+			if ($share->getLocalUid() === $uid) {
+				$this->actOnFileShare($share, 'decline');
+			}
+		} catch (DoesNotExistException) {
+			// already gone
+		}
+		// Uid-scoped delete — if the row doesn't belong to this user the
+		// DELETE matches zero rows. Row is removed (not kept as a
+		// `declined` tombstone) so re-sends are treated as fresh.
 		$this->mapper->deleteById($id, $uid);
 		return new DataResponse([], Http::STATUS_NO_CONTENT);
+	}
+
+	/**
+	 * Accept or decline the federated external Files mount paired with this
+	 * webapp share. Best-effort: a failure here must not stop the webapp
+	 * share's own state change. files_sharing's External\Manager is an
+	 * app-internal class, resolved lazily to avoid a hard dependency at
+	 * construction time.
+	 *
+	 * @param 'accept'|'decline' $action
+	 */
+	private function actOnFileShare(WebappShare $share, string $action): void {
+		$fileShareId = $share->getFileShareId();
+		if ($fileShareId === null || $fileShareId === '') {
+			return;
+		}
+		$user = $this->userManager->get($share->getLocalUid());
+		if ($user === null) {
+			return;
+		}
+		try {
+			/** @var \OCA\Files_Sharing\External\Manager $manager */
+			$manager = Server::get(\OCA\Files_Sharing\External\Manager::class);
+			$externalShare = $manager->getShare($fileShareId, $user);
+			if ($externalShare === false) {
+				return;
+			}
+			if ($action === 'accept') {
+				$manager->acceptShare($externalShare, $user);
+			} else {
+				$manager->declineShare($externalShare, $user);
+			}
+		} catch (\Throwable $e) {
+			$this->logger->warning('Failed to {action} paired Files mount {id}: {msg}', [
+				'action' => $action,
+				'id' => $fileShareId,
+				'msg' => $e->getMessage(),
+				'exception' => $e,
+			]);
+		}
 	}
 }

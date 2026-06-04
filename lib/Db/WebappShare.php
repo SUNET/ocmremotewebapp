@@ -39,6 +39,8 @@ use OCP\AppFramework\Db\Entity;
  * @method void setAppName(string $appName)
  * @method ?string getAppIcon()
  * @method void setAppIcon(?string $appIcon)
+ * @method ?string getFileShareId()
+ * @method void setFileShareId(?string $fileShareId)
  */
 class WebappShare extends Entity {
 	protected string $localUid = '';
@@ -67,6 +69,9 @@ class WebappShare extends Entity {
 	// the column (TEXT, no DB default) would be omitted from the INSERT and
 	// hit a NOT NULL violation. Default null sidesteps that.
 	protected ?string $appIcon = null;
+	// Id of the paired NC federated external share (Files mount) created
+	// from the webdav protocol entry. NULL when no mount was created.
+	protected ?string $fileShareId = null;
 
 	public function __construct() {
 		$this->addType('createdAt', 'integer');

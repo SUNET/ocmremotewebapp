@@ -10,6 +10,9 @@ use OCA\OCMRemoteWebApp\Db\WebappShareMapper;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\Federation\Exceptions\BadRequestException;
 use OCP\Federation\Exceptions\ProviderCouldNotAddShareException;
+use OCP\Federation\Exceptions\ProviderDoesNotExistsException;
+use OCP\Federation\ICloudFederationFactory;
+use OCP\Federation\ICloudFederationProviderManager;
 use OCP\Federation\ICloudFederationShare;
 use OCP\Federation\IValidationAwareCloudFederationProvider;
 use OCP\IUserManager;
@@ -33,6 +36,8 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 	public function __construct(
 		private IUserManager $userManager,
 		private WebappShareMapper $mapper,
+		private ICloudFederationProviderManager $federationManager,
+		private ICloudFederationFactory $federationFactory,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -83,7 +88,64 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 		$saved = $this->mapper->insert($entity);
 		$this->logger->info('Stored inbound webapp share for {user}', ['user' => $parsed['localUid']]);
 
+		// Forward the webdav protocol entry to NC's built-in "file" provider
+		// so the shared folder also appears as a federated Files mount. The
+		// mount is created pending (not auto-accepted); accepting the webapp
+		// share in the UI accepts this mount too. We persist its id so the
+		// accept/decline actions can act on both together.
+		$fileShareId = $this->forwardWebdavToFileProvider($share);
+		if ($fileShareId !== null && $fileShareId !== '') {
+			$saved->setFileShareId($fileShareId);
+			$this->mapper->update($saved);
+		}
+
 		return (string)$saved->getId();
+	}
+
+	/**
+	 * Synthesize a single-protocol webdav share from the multi-protocol
+	 * envelope and hand it to NC's "file" cloud federation provider, which
+	 * sets up the external Files mount. Returns the external share id, or
+	 * null when no mount could be created — a missing mount must not fail
+	 * the webapp share itself.
+	 */
+	private function forwardWebdavToFileProvider(ICloudFederationShare $original): ?string {
+		$protocol = $original->getProtocol();
+		$webdav = $protocol['webdav'] ?? null;
+		if (!is_array($webdav)) {
+			return null;
+		}
+		try {
+			$fileProvider = $this->federationManager->getCloudFederationProvider('file');
+		} catch (ProviderDoesNotExistsException $e) {
+			$this->logger->warning('No "file" provider registered; webapp share has no Files mount: {msg}', ['msg' => $e->getMessage()]);
+			return null;
+		}
+
+		$proxy = $this->federationFactory->getCloudFederationShare(
+			$original->getShareWith(),
+			$original->getResourceName(),
+			$original->getDescription(),
+			$original->getProviderId(),
+			$original->getOwner(),
+			$original->getOwnerDisplayName(),
+			$original->getSharedBy(),
+			$original->getSharedByDisplayName(),
+			(string)($webdav['sharedSecret'] ?? ''),
+			$original->getShareType(),
+			'file',
+		);
+		$proxy->setProtocol(['name' => 'webdav', 'webdav' => $webdav]);
+
+		try {
+			return (string)$fileProvider->shareReceived($proxy);
+		} catch (\Throwable $e) {
+			$this->logger->warning('Forwarding webdav portion to file provider failed: {msg}', [
+				'msg' => $e->getMessage(),
+				'exception' => $e,
+			]);
+			return null;
+		}
 	}
 
 	/**
