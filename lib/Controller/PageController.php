@@ -144,6 +144,10 @@ class PageController extends Controller {
 	}
 
 	private function renderEmbed(WebappShare $share, string $accessToken): TemplateResponse {
+		// Render inside the Nextcloud shell (RENDER_AS_USER, the default) so
+		// the top bar and app navigation stay around the embedded webapp,
+		// mirroring the integration_jupyterhub iframe page. The template emits
+		// only the inner content; NC wraps it in the full page.
 		return new TemplateResponse(
 			Application::APP_ID,
 			'embed',
@@ -153,7 +157,6 @@ class PageController extends Controller {
 				'sandbox' => $this->sandboxFor($share->getPermissions()),
 				'appName' => $share->getAppName(),
 			],
-			TemplateResponse::RENDER_AS_BLANK,
 		);
 	}
 
