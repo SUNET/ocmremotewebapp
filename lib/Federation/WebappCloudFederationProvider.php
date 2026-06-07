@@ -7,6 +7,7 @@ namespace OCA\OCMRemoteWebApp\Federation;
 use OCA\OCMRemoteWebApp\AppInfo\Application;
 use OCA\OCMRemoteWebApp\Db\WebappShare;
 use OCA\OCMRemoteWebApp\Db\WebappShareMapper;
+use OCA\OCMRemoteWebApp\Service\HubReaper;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\Federation\Exceptions\BadRequestException;
 use OCP\Federation\Exceptions\ProviderCouldNotAddShareException;
@@ -38,6 +39,7 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 		private WebappShareMapper $mapper,
 		private ICloudFederationProviderManager $federationManager,
 		private ICloudFederationFactory $federationFactory,
+		private HubReaper $hubReaper,
 		private LoggerInterface $logger,
 	) {
 	}
@@ -271,6 +273,13 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 		}
 		try {
 			$entity = $this->mapper->findById($id);
+			// Reap the remote hub notebook server too, if the share had been
+			// launched. Best-effort, and only possible while a live cached
+			// token remains — the sender has revoked the secret, so a fresh
+			// exchange will fail; the hub's idle-culling is the backstop.
+			if ($entity->getState() === 'accepted') {
+				$this->hubReaper->reap($entity);
+			}
 			$this->mapper->delete($entity);
 		} catch (DoesNotExistException) {
 			// nothing to remove.
