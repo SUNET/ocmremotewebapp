@@ -5,7 +5,7 @@
 	<name>OCM Remote WebApp</name>
 	<summary>App that will retrieve and present OCM webapp shares</summary>
 	<description>App that will retrieve and present OCM webapp shares</description>
-	<version>1.0.3</version>
+	<version>1.0.4</version>
 	<licence>AGPL-3.0-or-later</licence>
 	<author mail="enrique@cazalla.net" homepage="">Enrique Pérez Arnaud</author>
 	<namespace>OCMRemoteWebApp</namespace>
