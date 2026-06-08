@@ -6,7 +6,6 @@ namespace OCA\OCMRemoteWebApp\Controller;
 
 use OCA\OCMRemoteWebApp\Db\WebappShare;
 use OCA\OCMRemoteWebApp\Db\WebappShareMapper;
-use OCA\OCMRemoteWebApp\Service\HubReaper;
 use OCP\AppFramework\Controller;
 use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\AppFramework\Http;
@@ -32,7 +31,6 @@ class ReceivedController extends Controller {
 		private ?string $userId,
 		private WebappShareMapper $mapper,
 		private IUserManager $userManager,
-		private HubReaper $hubReaper,
 		private LoggerInterface $logger,
 	) {
 		parent::__construct($appName, $request);
@@ -91,11 +89,8 @@ class ReceivedController extends Controller {
 		try {
 			$share = $this->mapper->findById($id);
 			if ($share->getLocalUid() === $uid) {
-				// Reap the notebook server on the remote hub before dropping
-				// our row. Only accepted shares can have launched one.
-				if ($share->getState() === 'accepted') {
-					$this->hubReaper->reap($share);
-				}
+				// Standard OCM decline; the sender's app reaps any hub server
+				// it spawned off the resulting SHARE_DECLINED notification.
 				$this->actOnFileShare($share, 'decline');
 			}
 		} catch (DoesNotExistException) {
