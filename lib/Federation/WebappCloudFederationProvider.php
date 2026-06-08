@@ -94,7 +94,7 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 		$entity->setState($accepted ? 'accepted' : 'pending');
 		$entity->setCreatedAt(time());
 		$entity->setAppName($parsed['appName']);
-		$entity->setAppIcon($parsed['appIcon']);
+		$entity->setMediaType($parsed['mediaType']);
 		if ($fileShareId !== null && $fileShareId !== '') {
 			$entity->setFileShareId($fileShareId);
 		}
@@ -197,7 +197,7 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 	 *     targets: string,
 	 *     refreshToken: string,
 	 *     appName: string,
-	 *     appIcon: string,
+	 *     mediaType: string,
 	 * }
 	 * @throws BadRequestException
 	 * @throws ProviderCouldNotAddShareException
@@ -249,7 +249,7 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 			'targets' => $this->encodeTargets($webapp['targets'] ?? null),
 			'refreshToken' => $refreshToken,
 			'appName' => (string)($webapp['appName'] ?? ''),
-			'appIcon' => (string)($webapp['appIcon'] ?? ''),
+			'mediaType' => (string)($webapp['mediaType'] ?? ''),
 		];
 	}
 

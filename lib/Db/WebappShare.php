@@ -37,8 +37,8 @@ use OCP\AppFramework\Db\Entity;
  * @method void setCreatedAt(int $createdAt)
  * @method string getAppName()
  * @method void setAppName(string $appName)
- * @method ?string getAppIcon()
- * @method void setAppIcon(?string $appIcon)
+ * @method ?string getMediaType()
+ * @method void setMediaType(?string $mediaType)
  * @method ?string getFileShareId()
  * @method void setFileShareId(?string $fileShareId)
  */
@@ -63,12 +63,9 @@ class WebappShare extends Entity {
 	protected string $state = 'pending';
 	protected int $createdAt = 0;
 	protected string $appName = '';
-	// Nullable so setAppIcon('') always registers as a change: NC's Entity
-	// setter skips marking a field updated when the new value === the
-	// current one, so a default of '' would make setAppIcon('') a no-op and
-	// the column (TEXT, no DB default) would be omitted from the INSERT and
-	// hit a NOT NULL violation. Default null sidesteps that.
-	protected ?string $appIcon = null;
+	// Media (MIME) type of the share, e.g. application/vnd.jupyter. Optional,
+	// so nullable; the UI derives a themed icon from it.
+	protected ?string $mediaType = null;
 	// Id of the paired NC federated external share (Files mount) created
 	// from the webdav protocol entry. NULL when no mount was created.
 	protected ?string $fileShareId = null;
@@ -97,7 +94,7 @@ class WebappShare extends Entity {
 			'state' => $this->getState(),
 			'createdAt' => $this->getCreatedAt(),
 			'appName' => $this->getAppName(),
-			'appIcon' => $this->getAppIcon(),
+			'mediaType' => $this->getMediaType(),
 		];
 	}
 }

@@ -43,6 +43,15 @@ function asList(value) {
 // What this receiver can render, in preference order.
 const supportedTargets = ref(loadState(APP, 'supportedTargets', ['iframe', 'blank', 'redirect']))
 
+// Themed icon URL for a media type; the receiver picks it (OCM no longer
+// ships an icon). Null falls back to a generic component icon.
+function iconFor(mediaType) {
+	if (!mediaType) {
+		return null
+	}
+	return window.OC?.MimeType?.getIconUrl?.(mediaType) ?? null
+}
+
 function normalise(share) {
 	const shareTargets = asList(share.targets)
 	// Offer only targets both ends support, preserving our preference order.
@@ -51,6 +60,7 @@ function normalise(share) {
 		...share,
 		permissionList: asList(share.permissions),
 		availableTargets: available.length ? available : ['redirect'],
+		icon: iconFor(share.mediaType),
 	}
 }
 
@@ -149,7 +159,7 @@ async function decline(share) {
 				<ul v-else :class="$style.list">
 					<li v-for="share in shares" :key="share.id" :class="$style.item">
 						<span :class="$style.icon">
-							<img v-if="share.appIcon" :src="share.appIcon" alt="" :class="$style.iconImg">
+							<img v-if="share.icon" :src="share.icon" alt="" :class="$style.iconImg">
 							<ApplicationBracketsOutline v-else :size="32" />
 						</span>
 						<div :class="$style.meta">
