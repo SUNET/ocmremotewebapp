@@ -37,8 +37,10 @@ use OCP\AppFramework\Db\Entity;
  * @method void setCreatedAt(int $createdAt)
  * @method string getAppName()
  * @method void setAppName(string $appName)
- * @method ?string getMediaType()
- * @method void setMediaType(?string $mediaType)
+ * @method ?string getAppIconHint()
+ * @method void setAppIconHint(?string $appIconHint)
+ * @method ?string getMediaTypes()
+ * @method void setMediaTypes(?string $mediaTypes)
  * @method ?string getFileShareId()
  * @method void setFileShareId(?string $fileShareId)
  */
@@ -63,9 +65,10 @@ class WebappShare extends Entity {
 	protected string $state = 'pending';
 	protected int $createdAt = 0;
 	protected string $appName = '';
-	// Media (MIME) type of the share, e.g. application/vnd.jupyter. Optional,
-	// so nullable; the UI derives a themed icon from it.
-	protected ?string $mediaType = null;
+	// MIME-type hint for icon selection, e.g. application/vnd.jupyter.
+	protected ?string $appIconHint = null;
+	// JSON-encoded MIME types the sender's webapp can handle. NULL when absent.
+	protected ?string $mediaTypes = null;
 	// Id of the paired NC federated external share (Files mount) created
 	// from the webdav protocol entry. NULL when no mount was created.
 	protected ?string $fileShareId = null;
@@ -94,7 +97,8 @@ class WebappShare extends Entity {
 			'state' => $this->getState(),
 			'createdAt' => $this->getCreatedAt(),
 			'appName' => $this->getAppName(),
-			'mediaType' => $this->getMediaType(),
+			'appIconHint' => $this->getAppIconHint(),
+			'mediaTypes' => $this->getMediaTypes(),
 		];
 	}
 }

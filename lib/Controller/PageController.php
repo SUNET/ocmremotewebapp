@@ -25,9 +25,8 @@ use Psr\Log\LoggerInterface;
 
 class PageController extends Controller {
 
-	// Wire targets (OCM-API#368) this receiver can render. Ordered by
-	// preference so the first one that a share also offers is the default.
-	private const SUPPORTED_TARGETS = ['iframe', 'blank', 'redirect'];
+	// Wire targets this receiver can render, in preference order.
+	private const SUPPORTED_TARGETS = ['iframe', 'blank'];
 	// Re-exchange when the cached JWT has less than this much life left,
 	// so it doesn't expire mid-redirect.
 	private const ACCESS_TOKEN_SLACK_SECONDS = 30;
@@ -104,6 +103,15 @@ class PageController extends Controller {
 		}
 
 		$resolved = $this->resolveTarget($share, $target);
+		if ($resolved === null) {
+			return new TemplateResponse(
+				Application::APP_ID,
+				'launch_error',
+				['message' => 'This share offers no presentation target this receiver supports.'],
+				TemplateResponse::RENDER_AS_USER,
+				Http::STATUS_BAD_REQUEST,
+			);
+		}
 
 		// 'blank' (open in a new window/tab) is initiated client-side; the
 		// new tab still loads a same-tab redirect surface here.
@@ -165,10 +173,9 @@ class PageController extends Controller {
 	}
 
 	/**
-	 * Where the remote app sends the user to refresh a lapsed token
-	 * (OCM-API#368 `redirect_uri`): our own launcher, which re-exchanges and
-	 * re-POSTs. Forces the `redirect` surface so it reloads in place (any
-	 * frame) without nesting the NC shell.
+	 * Where the remote app posts back to refresh a lapsed token
+	 * (OCM-API `expired_session_redirect_uri`). Forces `redirect` so
+	 * the launcher reloads in place.
 	 */
 	private function refreshUri(WebappShare $share): string {
 		return $this->urlGenerator->linkToRouteAbsolute(
@@ -178,19 +185,18 @@ class PageController extends Controller {
 	}
 
 	/**
-	 * Pick the wire target to render: the requested one when both this
-	 * receiver and the share offer it, else the first target they share,
-	 * else a safe fallback. `targets` on the row is the sender's offered
-	 * set (OCM-API#368 wire vocabulary: blank/redirect/iframe).
+	 * Pick the wire target to render: requested if offered by both,
+	 * else the first overlap. Null when the intersection is empty —
+	 * the share is then unusable rather than silently defaulting.
 	 */
-	private function resolveTarget(WebappShare $share, string $requested): string {
+	private function resolveTarget(WebappShare $share, string $requested): ?string {
 		$shareTargets = json_decode($share->getTargets(), true);
 		if (!is_array($shareTargets) || $shareTargets === []) {
-			$shareTargets = self::SUPPORTED_TARGETS;
+			return null;
 		}
 		$available = array_values(array_intersect(self::SUPPORTED_TARGETS, $shareTargets));
 		if ($available === []) {
-			return 'redirect';
+			return null;
 		}
 		if ($requested !== '' && in_array($requested, $available, true)) {
 			return $requested;

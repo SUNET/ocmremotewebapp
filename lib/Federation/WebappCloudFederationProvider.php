@@ -31,7 +31,7 @@ use Psr\Log\LoggerInterface;
 class WebappCloudFederationProvider implements IValidationAwareCloudFederationProvider {
 
 	private const ALLOWED_PERMISSIONS = ['view', 'read', 'write', 'share'];
-	private const ALLOWED_TARGETS = ['blank', 'iframe', 'redirect'];
+	private const ALLOWED_TARGETS = ['blank', 'iframe'];
 
 	public function __construct(
 		private IUserManager $userManager,
@@ -94,7 +94,8 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 		$entity->setState($accepted ? 'accepted' : 'pending');
 		$entity->setCreatedAt(time());
 		$entity->setAppName($parsed['appName']);
-		$entity->setMediaType($parsed['mediaType']);
+		$entity->setAppIconHint($parsed['appIconHint']);
+		$entity->setMediaTypes($parsed['mediaTypes']);
 		if ($fileShareId !== null && $fileShareId !== '') {
 			$entity->setFileShareId($fileShareId);
 		}
@@ -197,7 +198,8 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 	 *     targets: string,
 	 *     refreshToken: string,
 	 *     appName: string,
-	 *     mediaType: string,
+	 *     appIconHint: ?string,
+	 *     mediaTypes: ?string,
 	 * }
 	 * @throws BadRequestException
 	 * @throws ProviderCouldNotAddShareException
@@ -242,14 +244,48 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 			throw new BadRequestException(['protocol.webapp.sharedSecret']);
 		}
 
+		// Per OCM-API `targets` is required and non-empty. Filter to known
+		// values; reject when nothing survives.
+		$rawTargets = $webapp['targets'] ?? null;
+		if (!is_array($rawTargets)) {
+			throw new BadRequestException(['protocol.webapp.targets']);
+		}
+		$targetsList = array_values(array_filter(
+			$rawTargets,
+			fn ($t) => is_string($t) && in_array($t, self::ALLOWED_TARGETS, true),
+		));
+		if ($targetsList === []) {
+			throw new BadRequestException(['protocol.webapp.targets']);
+		}
+
+		// Optional; NULL when absent so the UI can distinguish absent from empty.
+		$rawAppIconHint = $webapp['appIconHint'] ?? null;
+		$appIconHint = is_string($rawAppIconHint) && $rawAppIconHint !== ''
+			? $rawAppIconHint
+			: null;
+
+		// Optional; NULL when absent so the UI can distinguish absent from empty.
+		$mediaTypesEncoded = null;
+		$rawMediaTypes = $webapp['mediaTypes'] ?? null;
+		if (is_array($rawMediaTypes)) {
+			$cleanMediaTypes = array_values(array_filter(
+				$rawMediaTypes,
+				fn ($t) => is_string($t) && $t !== '',
+			));
+			if ($cleanMediaTypes !== []) {
+				$mediaTypesEncoded = (string)json_encode($cleanMediaTypes);
+			}
+		}
+
 		return [
 			'localUid' => $localUid,
 			'uri' => $uri,
 			'permissions' => (string)json_encode($permissionsList),
-			'targets' => $this->encodeTargets($webapp['targets'] ?? null),
+			'targets' => (string)json_encode($targetsList),
 			'refreshToken' => $refreshToken,
 			'appName' => (string)($webapp['appName'] ?? ''),
-			'mediaType' => (string)($webapp['mediaType'] ?? ''),
+			'appIconHint' => $appIconHint,
+			'mediaTypes' => $mediaTypesEncoded,
 		];
 	}
 
@@ -313,25 +349,5 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 	private function isAbsoluteUri(string $uri): bool {
 		$scheme = parse_url($uri, PHP_URL_SCHEME);
 		return $scheme === 'http' || $scheme === 'https';
-	}
-
-	/**
-	 * Encode `targets` as JSON, filtering to known values. Empty/missing
-	 * input falls back to the RFC default `["blank"]`.
-	 *
-	 * @param mixed $raw
-	 */
-	private function encodeTargets($raw): string {
-		if (!is_array($raw)) {
-			return '["blank"]';
-		}
-		$clean = array_values(array_filter(
-			$raw,
-			fn ($t) => is_string($t) && in_array($t, self::ALLOWED_TARGETS, true),
-		));
-		if ($clean === []) {
-			return '["blank"]';
-		}
-		return (string)json_encode($clean);
 	}
 }

@@ -29,7 +29,7 @@ class LocalOCMDiscoveryEventListener implements IEventListener {
 			['user'],
 			[
 				'webapp-receive' => [
-					'targets' => ['blank', 'iframe', 'redirect'],
+					'targets' => ['blank', 'iframe'],
 				],
 			],
 		);

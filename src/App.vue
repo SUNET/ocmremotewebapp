@@ -43,24 +43,28 @@ function asList(value) {
 // What this receiver can render, in preference order.
 const supportedTargets = ref(loadState(APP, 'supportedTargets', ['iframe', 'blank', 'redirect']))
 
-// Themed icon URL for a media type; the receiver picks it (OCM no longer
-// ships an icon). Null falls back to a generic component icon.
-function iconFor(mediaType) {
-	if (!mediaType) {
+// Themed icon URL from the sender's `appIconHint` MIME hint, or null
+// to fall back to a generic component icon.
+function iconFor(appIconHint) {
+	if (!appIconHint) {
 		return null
 	}
-	return window.OC?.MimeType?.getIconUrl?.(mediaType) ?? null
+	return window.OC?.MimeType?.getIconUrl?.(appIconHint) ?? null
 }
 
 function normalise(share) {
-	const shareTargets = asList(share.targets)
-	// Offer only targets both ends support, preserving our preference order.
-	const available = supportedTargets.value.filter((tg) => shareTargets.includes(tg))
+	const wireTargets = new Set(asList(share.targets))
+	// Wire `blank` covers both "new tab" and "this tab"; surface them
+	// as separate UI options via the receiver-local `redirect`.
+	if (wireTargets.has('blank')) {
+		wireTargets.add('redirect')
+	}
+	const available = supportedTargets.value.filter((tg) => wireTargets.has(tg))
 	return {
 		...share,
 		permissionList: asList(share.permissions),
 		availableTargets: available.length ? available : ['redirect'],
-		icon: iconFor(share.mediaType),
+		icon: iconFor(share.appIconHint),
 	}
 }
 

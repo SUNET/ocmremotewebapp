@@ -38,7 +38,7 @@ $nonce = \OCP\Server::get(\OC\Security\CSP\ContentSecurityPolicyNonceManager::cl
 		referrerpolicy="no-referrer"></iframe>
 	<form id="ocm-launch" method="POST" action="<?php p($_['uri']); ?>" target="ocm-target" enctype="application/x-www-form-urlencoded">
 		<input type="hidden" name="access_token" value="<?php p($_['accessToken']); ?>">
-		<input type="hidden" name="redirect_uri" value="<?php p($_['redirectUri']); ?>">
+		<input type="hidden" name="expired_session_redirect_uri" value="<?php p($_['redirectUri']); ?>">
 	</form>
 </div>
 <script nonce="<?php p($nonce); ?>">document.getElementById('ocm-launch').submit();</script>
