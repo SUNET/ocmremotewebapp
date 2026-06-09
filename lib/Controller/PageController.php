@@ -25,8 +25,9 @@ use Psr\Log\LoggerInterface;
 
 class PageController extends Controller {
 
-	// Wire targets this receiver can render, in preference order.
-	private const SUPPORTED_TARGETS = ['iframe', 'blank'];
+	// Local render modes in preference order: the wire targets plus
+	// `redirect`, a receiver-local same-tab flavor of `blank`.
+	private const SUPPORTED_TARGETS = ['iframe', 'blank', 'redirect'];
 	// Re-exchange when the cached JWT has less than this much life left,
 	// so it doesn't expire mid-redirect.
 	private const ACCESS_TOKEN_SLACK_SECONDS = 30;
@@ -193,6 +194,10 @@ class PageController extends Controller {
 		$shareTargets = json_decode($share->getTargets(), true);
 		if (!is_array($shareTargets) || $shareTargets === []) {
 			return null;
+		}
+		// Wire `blank` also enables the local `redirect` mode.
+		if (in_array('blank', $shareTargets, true)) {
+			$shareTargets[] = 'redirect';
 		}
 		$available = array_values(array_intersect(self::SUPPORTED_TARGETS, $shareTargets));
 		if ($available === []) {

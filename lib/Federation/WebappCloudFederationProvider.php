@@ -244,6 +244,12 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 			throw new BadRequestException(['protocol.webapp.sharedSecret']);
 		}
 
+		// `requirements` is required and must include must-exchange-token.
+		$requirements = $webapp['requirements'] ?? null;
+		if (!is_array($requirements) || !in_array('must-exchange-token', $requirements, true)) {
+			throw new BadRequestException(['protocol.webapp.requirements']);
+		}
+
 		// Per OCM-API `targets` is required and non-empty. Filter to known
 		// values; reject when nothing survives.
 		$rawTargets = $webapp['targets'] ?? null;
