@@ -10,7 +10,7 @@ declare(strict_types=1);
  * auto-submits a form to the share URI in the same tab.
  *
  * @var \OCP\IL10N $l
- * @var array{uri:string, accessToken:string, appName:string} $_
+ * @var array{uri:string, accessToken:string, redirectUri:string, appName:string} $_
  */
 $title = $_['appName'] !== '' ? $_['appName'] : $l->t('Opening shared webapp');
 // Stamp the inline auto-submit with NC's per-request CSP nonce, else
@@ -31,6 +31,7 @@ $nonce = \OCP\Server::get(\OC\Security\CSP\ContentSecurityPolicyNonceManager::cl
 	</noscript>
 	<form id="ocm-launch" method="POST" action="<?php p($_['uri']); ?>" target="_self" enctype="application/x-www-form-urlencoded">
 		<input type="hidden" name="access_token" value="<?php p($_['accessToken']); ?>">
+		<input type="hidden" name="redirect_uri" value="<?php p($_['redirectUri']); ?>">
 		<noscript>
 			<button type="submit"><?php p($l->t('Continue')); ?></button>
 		</noscript>

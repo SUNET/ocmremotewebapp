@@ -20,6 +20,7 @@ use OCP\AppFramework\Http\Response;
 use OCP\AppFramework\Http\TemplateResponse;
 use OCP\AppFramework\Services\IInitialState;
 use OCP\IRequest;
+use OCP\IURLGenerator;
 use Psr\Log\LoggerInterface;
 
 class PageController extends Controller {
@@ -38,6 +39,7 @@ class PageController extends Controller {
 		private IInitialState $initialState,
 		private WebappShareMapper $mapper,
 		private TokenExchanger $tokenExchanger,
+		private IURLGenerator $urlGenerator,
 		private LoggerInterface $logger,
 	) {
 		parent::__construct($appName, $request);
@@ -137,6 +139,7 @@ class PageController extends Controller {
 			[
 				'uri' => $share->getUri(),
 				'accessToken' => $accessToken,
+				'redirectUri' => $this->refreshUri($share),
 				'appName' => $share->getAppName(),
 			],
 			TemplateResponse::RENDER_AS_BLANK,
@@ -154,9 +157,23 @@ class PageController extends Controller {
 			[
 				'uri' => $share->getUri(),
 				'accessToken' => $accessToken,
+				'redirectUri' => $this->refreshUri($share),
 				'sandbox' => $this->sandboxFor($share->getPermissions()),
 				'appName' => $share->getAppName(),
 			],
+		);
+	}
+
+	/**
+	 * Where the remote app sends the user to refresh a lapsed token
+	 * (OCM-API#368 `redirect_uri`): our own launcher, which re-exchanges and
+	 * re-POSTs. Forces the `redirect` surface so it reloads in place (any
+	 * frame) without nesting the NC shell.
+	 */
+	private function refreshUri(WebappShare $share): string {
+		return $this->urlGenerator->linkToRouteAbsolute(
+			Application::APP_ID . '.page.open',
+			['token' => $share->getToken(), 'target' => 'redirect'],
 		);
 	}
 
