@@ -52,8 +52,7 @@ class WebappShare extends Entity {
 	protected string $resourceName = '';
 	protected string $uri = '';
 	protected string $permissions = 'view';
-	// JSON-encoded subset of blank/iframe/popup. Provider always
-	// initialises (RFC default is ["blank"]).
+	// JSON-encoded subset of the wire targets (blank/iframe).
 	protected string $targets = '[]';
 	// The wire `sharedSecret`, stored verbatim. Long-lived OAuth2
 	// authorization code; never expose to the browser.

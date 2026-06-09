@@ -135,15 +135,19 @@ class TokenExchanger {
 	}
 
 	/**
-	 * Remote host = the part after the last `@` in remote_owner
-	 * (a federated user ID, `user@host`).
+	 * Discovery starts from the sender's FQDN per spec. remote_shared_by
+	 * holds the wire `sender`; on a reshare its host can differ from the
+	 * owner's. Fall back to remote_owner for rows missing it.
 	 */
 	private function remoteHostFromShare(WebappShare $share): string {
-		$owner = $share->getRemoteOwner();
-		$at = strrpos($owner, '@');
+		$sender = $share->getRemoteSharedBy();
+		if ($sender === '') {
+			$sender = $share->getRemoteOwner();
+		}
+		$at = strrpos($sender, '@');
 		if ($at === false) {
 			return '';
 		}
-		return substr($owner, $at + 1);
+		return substr($sender, $at + 1);
 	}
 }

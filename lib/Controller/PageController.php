@@ -86,21 +86,26 @@ class PageController extends Controller {
 			return new NotFoundResponse();
 		}
 
-		try {
-			$accessToken = $this->ensureFreshAccessToken($share);
-		} catch (TokenExchangeException $e) {
-			$this->logger->warning('Token exchange failed for share {id}: {msg}', [
-				'id' => $share->getId(),
-				'msg' => $e->getMessage(),
-				'exception' => $e,
-			]);
-			return new TemplateResponse(
-				Application::APP_ID,
-				'launch_error',
-				['message' => 'The remote service is currently unavailable.'],
-				TemplateResponse::RENDER_AS_USER,
-				Http::STATUS_BAD_GATEWAY,
-			);
+		// No sharedSecret on the wire means no token exchange; the
+		// surfaces then open the URI directly without the token POST.
+		$accessToken = '';
+		if ($share->getRefreshToken() !== '') {
+			try {
+				$accessToken = $this->ensureFreshAccessToken($share);
+			} catch (TokenExchangeException $e) {
+				$this->logger->warning('Token exchange failed for share {id}: {msg}', [
+					'id' => $share->getId(),
+					'msg' => $e->getMessage(),
+					'exception' => $e,
+				]);
+				return new TemplateResponse(
+					Application::APP_ID,
+					'launch_error',
+					['message' => 'The remote service is currently unavailable.'],
+					TemplateResponse::RENDER_AS_USER,
+					Http::STATUS_BAD_GATEWAY,
+				);
+			}
 		}
 
 		$resolved = $this->resolveTarget($share, $target);

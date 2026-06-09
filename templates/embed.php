@@ -29,6 +29,17 @@ $nonce = \OCP\Server::get(\OC\Security\CSP\ContentSecurityPolicyNonceManager::cl
 	#ocm-embed-frame { flex: 1 1 auto; width: 100%; height: 100%; border: 0; display: block; }
 	#ocm-launch { display: none; }
 </style>
+<?php if ($_['accessToken'] === ''): /* no sharedSecret: load the URI directly, no token POST */ ?>
+<div id="ocm-embed">
+	<iframe
+		id="ocm-embed-frame"
+		name="ocm-target"
+		src="<?php p($_['uri']); ?>"
+		sandbox="<?php p($_['sandbox']); ?>"
+		allow="fullscreen"
+		referrerpolicy="no-referrer"></iframe>
+</div>
+<?php else: ?>
 <div id="ocm-embed">
 	<iframe
 		id="ocm-embed-frame"
@@ -42,3 +53,4 @@ $nonce = \OCP\Server::get(\OC\Security\CSP\ContentSecurityPolicyNonceManager::cl
 	</form>
 </div>
 <script nonce="<?php p($nonce); ?>">document.getElementById('ocm-launch').submit();</script>
+<?php endif; ?>

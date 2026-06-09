@@ -239,10 +239,9 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 			throw new BadRequestException(['protocol.webapp.permissions']);
 		}
 
+		// `sharedSecret` is optional; without one the webapp needs no
+		// token exchange and is opened directly.
 		$refreshToken = (string)($webapp['sharedSecret'] ?? '');
-		if ($refreshToken === '') {
-			throw new BadRequestException(['protocol.webapp.sharedSecret']);
-		}
 
 		// `requirements` is required and must include must-exchange-token.
 		$requirements = $webapp['requirements'] ?? null;
@@ -334,12 +333,10 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 	}
 
 	/**
-	 * Pull the `webapp` entry out of the protocol envelope.
-	 * Accept only:
+	 * Pull the `webapp` entry out of the protocol envelope. Accepts:
 	 *   - `{name: "webapp", webapp: {...}}`
 	 *   - `{name: "multi",  webapp: {...}, webdav: {...}}` (webdav ignored)
-	 *
-	 * v1's `{name: "webapp", options: {...}}` is rejected.
+	 *   - `{name: "webapp", options: {...}}` (deprecated Option 1)
 	 *
 	 * @param array<mixed> $protocol
 	 * @return array<string, mixed>|null
@@ -348,6 +345,9 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 		$name = (string)($protocol['name'] ?? '');
 		if (($name === 'webapp' || $name === 'multi') && isset($protocol['webapp']) && is_array($protocol['webapp'])) {
 			return $protocol['webapp'];
+		}
+		if ($name === 'webapp' && isset($protocol['options']) && is_array($protocol['options'])) {
+			return $protocol['options'];
 		}
 		return null;
 	}

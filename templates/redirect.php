@@ -26,6 +26,12 @@ $nonce = \OCP\Server::get(\OC\Security\CSP\ContentSecurityPolicyNonceManager::cl
 	</style>
 </head>
 <body>
+<?php if ($_['accessToken'] === ''): /* no sharedSecret: plain navigation, no token POST */ ?>
+	<noscript>
+		<p><a href="<?php p($_['uri']); ?>"><?php p($l->t('Continue')); ?></a></p>
+	</noscript>
+	<script nonce="<?php p($nonce); ?>">window.location.replace(<?php print_unescaped(json_encode($_['uri'])); ?>);</script>
+<?php else: ?>
 	<noscript>
 		<p><?php p($l->t('JavaScript is disabled. Click the button below to continue.')); ?></p>
 	</noscript>
@@ -37,5 +43,6 @@ $nonce = \OCP\Server::get(\OC\Security\CSP\ContentSecurityPolicyNonceManager::cl
 		</noscript>
 	</form>
 	<script nonce="<?php p($nonce); ?>">document.getElementById('ocm-launch').submit();</script>
+<?php endif; ?>
 </body>
 </html>
