@@ -13,6 +13,8 @@ use OCP\AppFramework\Db\Entity;
  * @method void setLocalUid(string $localUid)
  * @method string getToken()
  * @method void setToken(string $token)
+ * @method string getRemoteProviderId()
+ * @method void setRemoteProviderId(string $remoteProviderId)
  * @method string getRemoteOwner()
  * @method void setRemoteOwner(string $remoteOwner)
  * @method string getRemoteSharedBy()
@@ -47,6 +49,9 @@ use OCP\AppFramework\Db\Entity;
 class WebappShare extends Entity {
 	protected string $localUid = '';
 	protected string $token = '';
+	// The wire `providerId` (share id at the sending server); the lookup
+	// key for SHARE_UNSHARED. Empty on pre-migration rows.
+	protected string $remoteProviderId = '';
 	protected string $remoteOwner = '';
 	protected string $remoteSharedBy = '';
 	protected string $resourceName = '';

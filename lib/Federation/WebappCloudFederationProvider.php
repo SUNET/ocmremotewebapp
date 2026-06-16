@@ -7,7 +7,6 @@ namespace OCA\OCMRemoteWebApp\Federation;
 use OCA\OCMRemoteWebApp\AppInfo\Application;
 use OCA\OCMRemoteWebApp\Db\WebappShare;
 use OCA\OCMRemoteWebApp\Db\WebappShareMapper;
-use OCP\AppFramework\Db\DoesNotExistException;
 use OCP\Federation\Exceptions\BadRequestException;
 use OCP\Federation\Exceptions\ProviderCouldNotAddShareException;
 use OCP\Federation\Exceptions\ProviderDoesNotExistsException;
@@ -82,6 +81,7 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 		$entity = new WebappShare();
 		$entity->setLocalUid($parsed['localUid']);
 		$entity->setToken(bin2hex(random_bytes(16)));
+		$entity->setRemoteProviderId((string)$share->getProviderId());
 		$entity->setRemoteOwner((string)$share->getOwner());
 		$entity->setRemoteSharedBy((string)$share->getSharedBy());
 		$entity->setResourceName((string)$share->getResourceName());
@@ -297,26 +297,31 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 	/**
 	 * The only inbound notification a receive-only app can meaningfully act
 	 * on is SHARE_UNSHARED — the sender has revoked the share, so we drop
-	 * the row.
+	 * the row. The wire providerId is the share's id at the *sending*
+	 * server, and the notification authenticates itself with the share's
+	 * sharedSecret (same model as core's file provider); an unknown or
+	 * unauthenticated notification is a no-op.
 	 *
 	 * @param array<string, mixed> $notification
 	 * @return array<string>
+	 * @throws BadRequestException
 	 */
 	public function notificationReceived($notificationType, $providerId, array $notification): array {
 		if ($notificationType !== 'SHARE_UNSHARED') {
 			return [];
 		}
-		$id = (int)$providerId;
-		if ($id <= 0) {
-			return [];
+		$secret = $notification['sharedSecret'] ?? null;
+		if (!is_string($secret) || $secret === '') {
+			throw new BadRequestException(['sharedSecret']);
 		}
-		try {
-			$entity = $this->mapper->findById($id);
+		foreach ($this->mapper->findAllByRemoteProviderId((string)$providerId) as $entity) {
+			if (!hash_equals($entity->getRefreshToken(), $secret)) {
+				continue;
+			}
 			// The sender revoked; it reaps any hub server it spawned on its
-			// side. We just drop our row.
+			// side. We just drop our row (the paired Files mount gets its
+			// own "file" SHARE_UNSHARED from the sender's core).
 			$this->mapper->delete($entity);
-		} catch (DoesNotExistException) {
-			// nothing to remove.
 		}
 		return [];
 	}

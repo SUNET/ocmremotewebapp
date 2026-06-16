@@ -19,9 +19,8 @@ class WebappShareMapper extends QBMapper {
 
 	/**
 	 * Uid-agnostic lookup. Callers that need uid-scoping must do so
-	 * themselves — used by the SHARE_UNSHARED federation path (where NC
-	 * is the authority and the uid isn't in scope) and by the REST API
-	 * (where the controller checks ownership before mutating).
+	 * themselves — used by the REST API (where the controller checks
+	 * ownership before mutating).
 	 *
 	 * @throws \OCP\AppFramework\Db\DoesNotExistException
 	 * @throws \OCP\AppFramework\Db\MultipleObjectsReturnedException
@@ -32,6 +31,23 @@ class WebappShareMapper extends QBMapper {
 			->from($this->getTableName())
 			->where($qb->expr()->eq('id', $qb->createNamedParameter($id, IQueryBuilder::PARAM_INT)));
 		return $this->findEntity($qb);
+	}
+
+	/**
+	 * SHARE_UNSHARED lookup: the sender identifies the share by its own
+	 * providerId. Uid-agnostic — the sender, not a local user, is the
+	 * authority on this path. The caller must still authenticate the
+	 * notification against each row's sharedSecret (refresh_token is a
+	 * TEXT column, so the comparison is done in PHP, not SQL).
+	 *
+	 * @return WebappShare[]
+	 */
+	public function findAllByRemoteProviderId(string $remoteProviderId): array {
+		$qb = $this->db->getQueryBuilder();
+		$qb->select('*')
+			->from($this->getTableName())
+			->where($qb->expr()->eq('remote_provider_id', $qb->createNamedParameter($remoteProviderId, IQueryBuilder::PARAM_STR)));
+		return $this->findEntities($qb);
 	}
 
 	/**
@@ -62,8 +78,9 @@ class WebappShareMapper extends QBMapper {
 	/**
 	 * Uid-scoped delete used by the REST API (so a user can only remove their
 	 * own rows). The federation-driven SHARE_UNSHARED path in
-	 * WebappCloudFederationProvider uses findById + delete instead because
-	 * NC is the authority there and the uid is not in the call context.
+	 * WebappCloudFederationProvider deletes via findAllByRemoteProviderId
+	 * instead because the sender is the authority there and the uid is not
+	 * in the call context.
 	 */
 	public function deleteById(int $id, string $uid): void {
 		$qb = $this->db->getQueryBuilder();
