@@ -24,7 +24,11 @@ const TARGET_LABELS = {
 	redirect: t(APP, 'This tab'),
 }
 
-/** Parse a JSON-array string (or pass through an array) to string[]. */
+/**
+ * Parse a JSON-array string (or pass through an array) to string[].
+ *
+ * @param {unknown} value Array or JSON-encoded value to normalize.
+ */
 function asList(value) {
 	if (Array.isArray(value)) {
 		return value
@@ -163,7 +167,10 @@ async function decline(share) {
 				<ul v-else :class="$style.list">
 					<li v-for="share in shares" :key="share.id" :class="$style.item">
 						<span :class="$style.icon">
-							<img v-if="share.icon" :src="share.icon" alt="" :class="$style.iconImg">
+							<img v-if="share.icon"
+								:src="share.icon"
+								alt=""
+								:class="$style.iconImg">
 							<ApplicationBracketsOutline v-else :size="32" />
 						</span>
 						<div :class="$style.meta">
