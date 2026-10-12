@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" bootstrap="bootstrap-federation.php" xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.4/phpunit.xsd" cacheDirectory=".phpunit.cache">
+	<testsuite name="Federation unit tests">
+		<directory suffix="Test.php">unit/Federation</directory>
+		<directory suffix="Test.php">unit/AppInfo</directory>
+	</testsuite>
+</phpunit>

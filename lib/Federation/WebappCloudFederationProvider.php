@@ -18,14 +18,13 @@ use OCP\IUserManager;
 use Psr\Log\LoggerInterface;
 
 /**
- * Handles inbound OCM shares whose resourceType is "webapp".
+ * Handles inbound OCM folder shares carrying the webapp protocol.
  *
- * NC's cloud_federation_api routes inbound /ocm/shares requests with
- * `resourceType: webapp` to us because Application::boot() registered
- * this provider via addCloudFederationProvider().
+ * FolderCloudFederationProvider delegates webapp shares to this provider
+ * and leaves other folder shares to Nextcloud's registered provider.
  *
- * Accepts only the post-#367 wire shape: payload in `protocol.webapp`,
- * `permissions` enum, absolute `uri`. v1 envelopes are rejected.
+ * Accepts payloads in `protocol.webapp` or deprecated single-protocol
+ * `options`, with permission and target lists and an absolute `uri`.
  */
 class WebappCloudFederationProvider implements IValidationAwareCloudFederationProvider {
 
@@ -314,16 +313,28 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 		if (!is_string($secret) || $secret === '') {
 			throw new BadRequestException(['sharedSecret']);
 		}
-		foreach ($this->mapper->findAllByRemoteProviderId((string)$providerId) as $entity) {
-			if (!hash_equals($entity->getRefreshToken(), $secret)) {
-				continue;
-			}
+		foreach ($this->findAuthenticatedShares((string)$providerId, $secret) as $entity) {
 			// The sender revoked; it reaps any hub server it spawned on its
 			// side. We just drop our row (the paired Files mount gets its
 			// own "file" SHARE_UNSHARED from the sender's core).
 			$this->mapper->delete($entity);
 		}
 		return [];
+	}
+
+	/** @param array<string, mixed> $notification */
+	public function ownsNotification(string $providerId, array $notification): bool {
+		$secret = $notification['sharedSecret'] ?? null;
+		return is_string($secret) && $secret !== ''
+			&& $this->findAuthenticatedShares($providerId, $secret) !== [];
+	}
+
+	/** @return WebappShare[] */
+	private function findAuthenticatedShares(string $providerId, string $secret): array {
+		return array_values(array_filter(
+			$this->mapper->findAllByRemoteProviderId($providerId),
+			fn (WebappShare $entity): bool => hash_equals($entity->getRefreshToken(), $secret),
+		));
 	}
 
 	/**

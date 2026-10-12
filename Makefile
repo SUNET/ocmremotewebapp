@@ -1,8 +1,8 @@
-# SPDX-FileCopyrightText: Mikael Nordin <kano@sunet.se>
+# SPDX-FileCopyrightText: Micke Nordin <kano@sunet.se>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 app_name=ocmremotewebapp
-get_version = $(shell grep /version appinfo/info.xml | sed 's/.*\([0-9]\.[0-9]\.[0-9]\).*/\1/')
+get_version = $(shell php -r 'echo (string)simplexml_load_file("appinfo/info.xml")->version;')
 cert_dir=$(HOME)/.nextcloud/certificates
 project_dir=$(CURDIR)
 build_dir=$(project_dir)/build/artifacts
@@ -10,6 +10,13 @@ build_tools_dir=$(project_dir)/build/tools
 sign_dir=$(build_dir)/sign
 version := $(call get_version)
 composer = $(shell which composer)
+
+# Only runtime files and public release documentation belong in the archive.
+# This app has no external PHP runtime dependencies to bundle from vendor/.
+package_dirs = lib templates img js css
+package_files = LICENSE CHANGELOG.md README.md openapi.json
+
+.PHONY: all release sign appstore clean distclean package
 
 all: appstore
 release: appstore
@@ -60,31 +67,17 @@ sign: docker_kill package
 appstore: sign
 
 clean:
-	rm -rf $(build_dir)
+	rm -rf "$(build_dir)"
 
 package: clean build
-	mkdir -p $(sign_dir)
-	rsync -a \
-	--exclude=/build \
-	--exclude=/docs \
-	--exclude=/translationfiles \
-	--exclude=.tx \
-	--exclude=/tests \
-	--exclude=.git \
-	--exclude=.github \
-	--exclude=/l10n/l10n.pl \
-	--exclude=/CONTRIBUTING.md \
-	--exclude=/issue_template.md \
-	--exclude=.gitattributes \
-	--exclude=.gitignore \
-	--exclude=.scrutinizer.yml \
-	--exclude=.travis.yml \
-	--exclude=/Makefile \
-	--exclude=.drone.yml \
-	--exclude=/node_modules \
-	$(project_dir)/ $(sign_dir)/$(app_name)
-	tar -czf $(build_dir)/$(app_name)-$(version).tar.gz \
-		-C $(sign_dir) $(app_name)
+	mkdir -p "$(sign_dir)/$(app_name)/appinfo"
+	cp -a "$(project_dir)/appinfo/info.xml" "$(project_dir)/appinfo/routes.php" "$(sign_dir)/$(app_name)/appinfo/"
+	cp -a $(foreach path,$(package_dirs) $(package_files),"$(project_dir)/$(path)") "$(sign_dir)/$(app_name)/"
+	@if find "$(sign_dir)/$(app_name)" -type l -print -quit | grep -q .; then \
+		echo "Refusing to package symbolic links"; exit 1; \
+	fi
+	tar -czf "$(build_dir)/$(app_name)-$(version).tar.gz" \
+		-C "$(sign_dir)" "$(app_name)"
 
 
 # Fetches the PHP and JS dependencies and compiles the JS.
