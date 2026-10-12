@@ -5,12 +5,12 @@
 	<name>OCM Remote WebApp</name>
 	<summary>App that will retrieve and present OCM webapp shares</summary>
 	<description>App that will retrieve and present OCM webapp shares</description>
-	<version>1.0.9</version>
+	<version>1.0.10</version>
 	<licence>AGPL-3.0-or-later</licence>
-	<author mail="enrique@cazalla.net" homepage="">Enrique Pérez Arnaud</author>
+	<author mail="kano@sunet.se" homepage="https://github.com/SUNET/ocmremotewebapp">Micke Nordin</author>
 	<namespace>OCMRemoteWebApp</namespace>
 	<category>social</category>
-	<bugs>https://github.com/enriquepablo/ocmremotewebapp/issues</bugs>
+	<bugs>https://github.com/SUNET/ocmremotewebapp/issues</bugs>
 	<dependencies>
 		<nextcloud min-version="31" max-version="35"/>
 	</dependencies>

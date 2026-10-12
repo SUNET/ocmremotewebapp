@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-10-12
+
+### Fixed
+
+- Pass folder shares without a webapp protocol unchanged to the existing federation provider, regardless of resource types in the remaining multi-protocol entries.
+- Preserve ordinary folder-share validation, group sharing, and signed notification handling while retaining webapp validation and authenticated unshare handling.
+- Parse multi-digit version components correctly when naming release archives.
+- Package only runtime files and public release documentation, excluding development dependencies, tooling, frontend sources, caches, and stale source signatures.
+
 ## [1.0.9] - 2026-10-09
 
 ### Added

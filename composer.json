@@ -26,6 +26,8 @@
 		"cs:fix": "php-cs-fixer fix",
 		"psalm": "psalm --threads=1 --no-cache",
 		"test:unit": "phpunit tests -c tests/phpunit.xml --colors=always --fail-on-warning --fail-on-risky",
+		"test:federation": "@php vendor-bin/phpunit/vendor/bin/phpunit -c tests/phpunit.federation.xml --fail-on-warning --fail-on-risky",
+		"test:package": "@php vendor-bin/phpunit/vendor/bin/phpunit --no-configuration --fail-on-warning --fail-on-risky tests/unit/Packaging",
 		"openapi": "generate-spec",
 		"rector": "rector && composer cs:fix"
 	},
