@@ -154,7 +154,7 @@ class PageController extends Controller {
 				'uri' => $share->getUri(),
 				'accessToken' => $accessToken,
 				'redirectUri' => $this->refreshUri($share),
-				'appName' => $share->getAppName(),
+				'appName' => $share->getPrimaryAppName(),
 			],
 			TemplateResponse::RENDER_AS_BLANK,
 		);
@@ -173,7 +173,7 @@ class PageController extends Controller {
 				'accessToken' => $accessToken,
 				'redirectUri' => $this->refreshUri($share),
 				'sandbox' => $this->sandboxFor($share->getPermissions()),
-				'appName' => $share->getAppName(),
+				'appName' => $share->getPrimaryAppName(),
 			],
 		);
 	}

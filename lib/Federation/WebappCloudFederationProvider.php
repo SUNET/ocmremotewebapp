@@ -92,9 +92,8 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 		// TokenExchanger mints them lazily on first launch.
 		$entity->setState($accepted ? 'accepted' : 'pending');
 		$entity->setCreatedAt(time());
-		$entity->setAppName($parsed['appName']);
+		$entity->setApps($parsed['apps']);
 		$entity->setAppIconHint($parsed['appIconHint']);
-		$entity->setMediaTypes($parsed['mediaTypes']);
 		if ($fileShareId !== null && $fileShareId !== '') {
 			$entity->setFileShareId($fileShareId);
 		}
@@ -196,9 +195,8 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 	 *     permissions: string,
 	 *     targets: string,
 	 *     refreshToken: string,
-	 *     appName: string,
+	 *     apps: ?string,
 	 *     appIconHint: ?string,
-	 *     mediaTypes: ?string,
 	 * }
 	 * @throws BadRequestException
 	 * @throws ProviderCouldNotAddShareException
@@ -268,16 +266,41 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 			? $rawAppIconHint
 			: null;
 
-		// Optional; NULL when absent so the UI can distinguish absent from empty.
-		$mediaTypesEncoded = null;
-		$rawMediaTypes = $webapp['mediaTypes'] ?? null;
-		if (is_array($rawMediaTypes)) {
-			$cleanMediaTypes = array_values(array_filter(
-				$rawMediaTypes,
-				fn ($t) => is_string($t) && $t !== '',
-			));
-			if ($cleanMediaTypes !== []) {
-				$mediaTypesEncoded = (string)json_encode($cleanMediaTypes);
+		// Optional OCM-API v08 `apps` array: entries must carry a
+		// non-empty `name` and a non-empty `mediaTypes` list, and at most
+		// one entry per name — the first entry for a name wins, since the
+		// array order expresses the sender's preference. Invalid entries
+		// are dropped; NULL when nothing survives so the UI can
+		// distinguish absent from empty.
+		$appsEncoded = null;
+		$rawApps = $webapp['apps'] ?? null;
+		if (is_array($rawApps)) {
+			$cleanApps = [];
+			$seenNames = [];
+			foreach ($rawApps as $app) {
+				if (!is_array($app)) {
+					continue;
+				}
+				$name = $app['name'] ?? null;
+				if (!is_string($name) || $name === '' || isset($seenNames[$name])) {
+					continue;
+				}
+				$rawEntryMediaTypes = $app['mediaTypes'] ?? null;
+				if (!is_array($rawEntryMediaTypes)) {
+					continue;
+				}
+				$cleanMediaTypes = array_values(array_filter(
+					$rawEntryMediaTypes,
+					fn ($t) => is_string($t) && $t !== '',
+				));
+				if ($cleanMediaTypes === []) {
+					continue;
+				}
+				$seenNames[$name] = true;
+				$cleanApps[] = ['name' => $name, 'mediaTypes' => $cleanMediaTypes];
+			}
+			if ($cleanApps !== []) {
+				$appsEncoded = (string)json_encode($cleanApps);
 			}
 		}
 
@@ -287,9 +310,8 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 			'permissions' => (string)json_encode($permissionsList),
 			'targets' => (string)json_encode($targetsList),
 			'refreshToken' => $refreshToken,
-			'appName' => (string)($webapp['appName'] ?? ''),
+			'apps' => $appsEncoded,
 			'appIconHint' => $appIconHint,
-			'mediaTypes' => $mediaTypesEncoded,
 		];
 	}
 

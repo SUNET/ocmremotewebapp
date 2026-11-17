@@ -75,6 +75,10 @@ final class WebappCloudFederationProviderTest extends LocalizedTestCase {
 				'requirements' => ['must-exchange-token'],
 				'targets' => ['blank'],
 				'sharedSecret' => 'secret',
+				'appIconHint' => 'application/vnd.jupyter',
+				'apps' => [
+					['name' => 'Jupyter', 'mediaTypes' => ['application/x-ipynb+json', 'text/plain']],
+				],
 			],
 		]);
 		$mapper = $this->createMock(WebappShareMapper::class);
@@ -83,6 +87,12 @@ final class WebappCloudFederationProviderTest extends LocalizedTestCase {
 			$this->assertSame('https://remote.example/app', $entity->getUri());
 			$this->assertSame('secret', $entity->getRefreshToken());
 			$this->assertSame('pending', $entity->getState());
+			$this->assertSame('application/vnd.jupyter', $entity->getAppIconHint());
+			$this->assertSame(
+				[['name' => 'Jupyter', 'mediaTypes' => ['application/x-ipynb+json', 'text/plain']]],
+				json_decode((string)$entity->getApps(), true),
+			);
+			$this->assertSame('Jupyter', $entity->getPrimaryAppName());
 			$entity->setId(123);
 			return $entity;
 		});
@@ -92,6 +102,54 @@ final class WebappCloudFederationProviderTest extends LocalizedTestCase {
 
 		$provider->validateShare($share);
 		$this->assertSame('123', $provider->shareReceived($share));
+	}
+
+	/** @param array<string, mixed>|null $apps */
+	private function storedAppsFor(?array $apps): ?string {
+		$share = $this->createMock(ICloudFederationShare::class);
+		$share->method('getResourceType')->willReturn('folder');
+		$share->method('getShareWith')->willReturn('recipient');
+		$webapp = [
+			'uri' => 'https://remote.example/app',
+			'permissions' => ['view'],
+			'requirements' => ['must-exchange-token'],
+			'targets' => ['blank'],
+		];
+		if ($apps !== null) {
+			$webapp['apps'] = $apps;
+		}
+		$share->method('getProtocol')->willReturn(['name' => 'webapp', 'webapp' => $webapp]);
+		$mapper = $this->createMock(WebappShareMapper::class);
+		$captured = null;
+		$mapper->method('insert')->willReturnCallback(function (WebappShare $entity) use (&$captured): WebappShare {
+			$captured = $entity->getApps();
+			$entity->setId(1);
+			return $entity;
+		});
+		$this->provider($mapper)->shareReceived($share);
+		return $captured;
+	}
+
+	public function testAppsKeepOrderDropInvalidEntriesAndDedupeByName(): void {
+		$apps = $this->storedAppsFor([
+			['name' => 'HedgeDoc', 'mediaTypes' => ['text/markdown', 'text/html', '']],
+			['name' => 'Collabora', 'mediaTypes' => ['application/vnd.oasis.opendocument.text']],
+			['name' => 'HedgeDoc', 'mediaTypes' => ['text/plain']], // duplicate name: first wins
+			['name' => '', 'mediaTypes' => ['text/plain']], // no name
+			['name' => 'Broken', 'mediaTypes' => []], // empty mediaTypes
+			['name' => 'Broken2'], // no mediaTypes
+			'not-an-object',
+		]);
+		$this->assertSame([
+			['name' => 'HedgeDoc', 'mediaTypes' => ['text/markdown', 'text/html']],
+			['name' => 'Collabora', 'mediaTypes' => ['application/vnd.oasis.opendocument.text']],
+		], json_decode((string)$apps, true));
+	}
+
+	public function testAbsentOrEmptyAppsAreStoredAsNull(): void {
+		$this->assertNull($this->storedAppsFor(null));
+		$this->assertNull($this->storedAppsFor([]));
+		$this->assertNull($this->storedAppsFor([['name' => '', 'mediaTypes' => ['text/plain']]]));
 	}
 
 	public function testNotificationOwnershipRequiresMatchingProviderIdAndSecret(): void {

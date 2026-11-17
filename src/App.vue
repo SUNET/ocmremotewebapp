@@ -44,6 +44,27 @@ function asList(value) {
 	return []
 }
 
+/**
+ * Parse the OCM v08 `apps` field (JSON string or array) to a list of
+ * {name, mediaTypes} entries, keeping only well-formed ones.
+ *
+ * @param {unknown} value Apps value from the API to normalize.
+ */
+function asApps(value) {
+	let list = value
+	if (typeof value === 'string' && value.trim() !== '') {
+		try {
+			list = JSON.parse(value)
+		} catch (e) {
+			return []
+		}
+	}
+	if (!Array.isArray(list)) {
+		return []
+	}
+	return list.filter((a) => a !== null && typeof a === 'object' && typeof a.name === 'string' && a.name !== '')
+}
+
 // What this receiver can render, in preference order.
 const supportedTargets = ref(loadState(APP, 'supportedTargets', ['iframe', 'blank', 'redirect']))
 
@@ -64,8 +85,13 @@ function normalise(share) {
 		wireTargets.add('redirect')
 	}
 	const available = supportedTargets.value.filter((tg) => wireTargets.has(tg))
+	// The sender's `apps` order expresses preference: the first entry
+	// names the web app the share opens in.
+	const apps = asApps(share.apps)
 	return {
 		...share,
+		apps,
+		appName: apps[0]?.name || '',
 		permissionList: asList(share.permissions),
 		availableTargets: available.length ? available : ['redirect'],
 		icon: iconFor(share.appIconHint),

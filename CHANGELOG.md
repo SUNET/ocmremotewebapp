@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Follow OCM-API v08 (cs3org/OCM-API#423): the `webapp` protocol payload's `appName` and `mediaTypes` fields are replaced by an `apps` array of `{name, mediaTypes}` entries. Inbound shares are parsed from `apps`, stored in a new `apps` column (existing `app_name`/`media_types` values are migrated into it and the old columns dropped), and exposed to the frontend as `apps`; the share title and launch pages use the first entry's `name`.
+
 ## [1.0.10] - 2026-10-12
 
 ### Fixed
