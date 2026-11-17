@@ -5,7 +5,7 @@
 	<name>OCM Remote WebApp</name>
 	<summary>App that will retrieve and present OCM webapp shares</summary>
 	<description>App that will retrieve and present OCM webapp shares</description>
-	<version>1.1.1</version>
+	<version>1.2.0</version>
 	<licence>AGPL-3.0-or-later</licence>
 	<author mail="kano@sunet.se" homepage="https://github.com/SUNET/ocmremotewebapp">Micke Nordin</author>
 	<namespace>OCMRemoteWebApp</namespace>
