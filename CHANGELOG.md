@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Accept inbound OCM webapp shares for `file` resources in addition to `folder`, and advertise `webapp-receive` for both resource types in OCM discovery. The `folder`/`file` federation providers are now wrapped by a shared delegating provider (`DelegatingCloudFederationProvider`), which also always forwards notifications to the core provider so paired Files mounts are reaped for file shares too.
+
 ## [1.1.1] - 2026-11-17
 
 ### Fixed

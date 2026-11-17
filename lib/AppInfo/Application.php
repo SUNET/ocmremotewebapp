@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\OCMRemoteWebApp\AppInfo;
 
-use OCA\OCMRemoteWebApp\Federation\FolderCloudFederationProvider;
+use OCA\OCMRemoteWebApp\Federation\DelegatingCloudFederationProvider;
 use OCA\OCMRemoteWebApp\Federation\WebappCloudFederationProvider;
 use OCA\OCMRemoteWebApp\Listener\CSPListener;
 use OCA\OCMRemoteWebApp\Listener\LocalOCMDiscoveryEventListener;
@@ -19,8 +19,11 @@ use OCP\Security\CSP\AddContentSecurityPolicyEvent;
 class Application extends App implements IBootstrap {
 	public const APP_ID = 'ocmremotewebapp';
 
-	/** OCM resource type advertised via /.well-known/ocm. */
+	/** Primary OCM resource type advertised via /.well-known/ocm. */
 	public const WEBAPP_RESOURCE_TYPE = 'folder';
+
+	/** Resource types for which this app accepts inbound webapp shares. */
+	public const WEBAPP_RESOURCE_TYPES = ['folder', 'file'];
 
 	/** User-facing label in NC's federation provider registry. */
 	public const WEBAPP_DISPLAY_NAME = 'OCM Remote WebApp';
@@ -38,25 +41,29 @@ class Application extends App implements IBootstrap {
 	public function boot(IBootContext $context): void {
 		$context->injectFn(function (ICloudFederationProviderManager $manager) use ($context): void {
 			$providers = $manager->getAllCloudFederationProviders();
-			// Older Nextcloud versions register the Files provider only as "file".
-			$originalCallback = $providers[self::WEBAPP_RESOURCE_TYPE]['callback']
-				?? $providers['file']['callback']
-				?? null;
-			$manager->removeCloudFederationProvider(self::WEBAPP_RESOURCE_TYPE);
-			$manager->addCloudFederationProvider(
-				self::WEBAPP_RESOURCE_TYPE,
-				self::WEBAPP_DISPLAY_NAME,
-				function () use ($context, $originalCallback): FolderCloudFederationProvider {
-					$originalProvider = $originalCallback !== null ? $originalCallback() : null;
-					if ($originalProvider instanceof FolderCloudFederationProvider) {
-						return $originalProvider;
-					}
-					return new FolderCloudFederationProvider(
-						$context->getAppContainer()->get(WebappCloudFederationProvider::class),
-						$originalProvider,
-					);
-				},
-			);
+			foreach (self::WEBAPP_RESOURCE_TYPES as $type) {
+				// Older Nextcloud versions register the Files provider only as "file".
+				$originalCallback = $providers[$type]['callback']
+					?? ($type === self::WEBAPP_RESOURCE_TYPE ? ($providers['file']['callback'] ?? null) : null);
+				if (isset($providers[$type])) {
+					$manager->removeCloudFederationProvider($type);
+				}
+				$manager->addCloudFederationProvider(
+					$type,
+					self::WEBAPP_DISPLAY_NAME,
+					function () use ($context, $originalCallback, $type): DelegatingCloudFederationProvider {
+						$originalProvider = $originalCallback !== null ? $originalCallback() : null;
+						if ($originalProvider instanceof DelegatingCloudFederationProvider) {
+							return $originalProvider;
+						}
+						return new DelegatingCloudFederationProvider(
+							$context->getAppContainer()->get(WebappCloudFederationProvider::class),
+							$originalProvider,
+							$type,
+						);
+					},
+				);
+			}
 		});
 	}
 }

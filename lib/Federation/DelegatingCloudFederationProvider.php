@@ -12,23 +12,33 @@ use OCP\Federation\ISignedCloudFederationProvider;
 use OCP\Federation\IValidationAwareCloudFederationProvider;
 
 /**
- * Decorates the folder provider without taking ownership of non-webapp shares.
+ * Decorates the core provider for one resource type (folder or file)
+ * without taking ownership of non-webapp shares: shares carrying a
+ * `webapp` protocol entry go to the webapp provider, everything else to
+ * the wrapped core provider.
+ *
+ * Notifications are always forwarded to the core provider when one is
+ * wrapped (so the paired Files mount is reaped even for `file`
+ * resourceType notifications, which would otherwise be claimed by the
+ * webapp provider); webapp share rows owned by this app are additionally
+ * cleaned up.
  */
-class FolderCloudFederationProvider implements IValidationAwareCloudFederationProvider, ISignedCloudFederationProvider {
+class DelegatingCloudFederationProvider implements IValidationAwareCloudFederationProvider, ISignedCloudFederationProvider {
 
 	public function __construct(
 		private WebappCloudFederationProvider $webappProvider,
-		private ?ICloudFederationProvider $folderProvider,
+		private ?ICloudFederationProvider $coreProvider,
+		private string $resourceType = Application::WEBAPP_RESOURCE_TYPE,
 	) {
 	}
 
 	public function getShareType(): string {
-		return Application::WEBAPP_RESOURCE_TYPE;
+		return $this->resourceType;
 	}
 
 	public function getSupportedShareTypes(): array {
 		return array_values(array_unique(array_merge(
-			$this->folderProvider?->getSupportedShareTypes() ?? [],
+			$this->coreProvider?->getSupportedShareTypes() ?? [],
 			$this->webappProvider->getSupportedShareTypes(),
 		)));
 	}
@@ -50,15 +60,18 @@ class FolderCloudFederationProvider implements IValidationAwareCloudFederationPr
 	 */
 	public function notificationReceived(string $notificationType, string $providerId, array $notification): array {
 		if ($this->webappProvider->ownsNotification($providerId, $notification)) {
-			return $this->webappProvider->notificationReceived($notificationType, $providerId, $notification);
+			$this->webappProvider->notificationReceived($notificationType, $providerId, $notification);
 		}
-		return $this->getFolderProvider()->notificationReceived($notificationType, $providerId, $notification);
+		if ($this->coreProvider !== null) {
+			return $this->coreProvider->notificationReceived($notificationType, $providerId, $notification);
+		}
+		return [];
 	}
 
 	/** @param array<string, mixed> $payload */
 	public function getFederationIdFromSharedSecret(string $sharedSecret, array $payload): string {
-		if ($this->folderProvider instanceof ISignedCloudFederationProvider) {
-			return $this->folderProvider->getFederationIdFromSharedSecret($sharedSecret, $payload);
+		if ($this->coreProvider instanceof ISignedCloudFederationProvider) {
+			return $this->coreProvider->getFederationIdFromSharedSecret($sharedSecret, $payload);
 		}
 		return '';
 	}
@@ -66,17 +79,17 @@ class FolderCloudFederationProvider implements IValidationAwareCloudFederationPr
 	private function providerForShare(ICloudFederationShare $share): ICloudFederationProvider {
 		$protocol = $share->getProtocol();
 		// Presence, not validity, selects the webapp provider: malformed entries
-		// must be rejected there rather than accepted as ordinary folder shares.
+		// must be rejected there rather than accepted as ordinary shares.
 		if (($protocol['name'] ?? '') === 'webapp' || array_key_exists('webapp', $protocol)) {
 			return $this->webappProvider;
 		}
-		return $this->getFolderProvider();
+		return $this->getCoreProvider();
 	}
 
-	private function getFolderProvider(): ICloudFederationProvider {
-		if ($this->folderProvider === null) {
-			throw new ProviderDoesNotExistsException(Application::WEBAPP_RESOURCE_TYPE);
+	private function getCoreProvider(): ICloudFederationProvider {
+		if ($this->coreProvider === null) {
+			throw new ProviderDoesNotExistsException($this->resourceType);
 		}
-		return $this->folderProvider;
+		return $this->coreProvider;
 	}
 }

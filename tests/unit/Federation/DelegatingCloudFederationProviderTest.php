@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\OCMRemoteWebApp\Tests\Unit\Federation;
 
-use OCA\OCMRemoteWebApp\Federation\FolderCloudFederationProvider;
+use OCA\OCMRemoteWebApp\Federation\DelegatingCloudFederationProvider;
 use OCA\OCMRemoteWebApp\Federation\WebappCloudFederationProvider;
 use OCP\Federation\Exceptions\BadRequestException;
 use OCP\Federation\Exceptions\ProviderCouldNotAddShareException;
@@ -15,7 +15,7 @@ use OCP\Federation\ISignedCloudFederationProvider;
 use OCP\Federation\IValidationAwareCloudFederationProvider;
 use PHPUnit\Framework\Attributes\DataProvider;
 
-final class FolderCloudFederationProviderTest extends LocalizedTestCase {
+final class DelegatingCloudFederationProviderTest extends LocalizedTestCase {
 
 	/** @return array<string, array{array<string, mixed>, string}> */
 	public static function nonWebappShares(): array {
@@ -44,10 +44,10 @@ final class FolderCloudFederationProviderTest extends LocalizedTestCase {
 		$webapp = $this->createMock(WebappCloudFederationProvider::class);
 		$webapp->expects($this->never())->method('validateShare');
 		$webapp->expects($this->never())->method('shareReceived');
-		$folder = $this->createMock(IValidationAwareCloudFederationProvider::class);
-		$folder->expects($this->once())->method('validateShare')->with($this->identicalTo($share));
-		$folder->expects($this->once())->method('shareReceived')->with($this->identicalTo($share))->willReturn('core-id');
-		$provider = new FolderCloudFederationProvider($webapp, $folder);
+		$core = $this->createMock(IValidationAwareCloudFederationProvider::class);
+		$core->expects($this->once())->method('validateShare')->with($this->identicalTo($share));
+		$core->expects($this->once())->method('shareReceived')->with($this->identicalTo($share))->willReturn('core-id');
+		$provider = new DelegatingCloudFederationProvider($webapp, $core, $resourceType);
 
 		$provider->validateShare($share);
 		$this->assertSame('core-id', $provider->shareReceived($share));
@@ -56,12 +56,12 @@ final class FolderCloudFederationProviderTest extends LocalizedTestCase {
 	public function testCoreWithoutValidationIsNotCalledDuringValidation(): void {
 		$share = $this->createMock(ICloudFederationShare::class);
 		$share->method('getProtocol')->willReturn(['name' => 'multi', 'webdav' => []]);
-		$folder = $this->createMock(ICloudFederationProvider::class);
-		$folder->expects($this->never())->method('shareReceived');
+		$core = $this->createMock(ICloudFederationProvider::class);
+		$core->expects($this->never())->method('shareReceived');
 		$webapp = $this->createMock(WebappCloudFederationProvider::class);
 		$webapp->expects($this->never())->method('validateShare');
 
-		(new FolderCloudFederationProvider($webapp, $folder))->validateShare($share);
+		(new DelegatingCloudFederationProvider($webapp, $core))->validateShare($share);
 		$this->addToAssertionCount(1);
 	}
 
@@ -82,10 +82,10 @@ final class FolderCloudFederationProviderTest extends LocalizedTestCase {
 		$webapp = $this->createMock(WebappCloudFederationProvider::class);
 		$webapp->expects($this->once())->method('validateShare')->with($share);
 		$webapp->expects($this->once())->method('shareReceived')->with($share)->willReturn('webapp-id');
-		$folder = $this->createMock(IValidationAwareCloudFederationProvider::class);
-		$folder->expects($this->never())->method('validateShare');
-		$folder->expects($this->never())->method('shareReceived');
-		$provider = new FolderCloudFederationProvider($webapp, $folder);
+		$core = $this->createMock(IValidationAwareCloudFederationProvider::class);
+		$core->expects($this->never())->method('validateShare');
+		$core->expects($this->never())->method('shareReceived');
+		$provider = new DelegatingCloudFederationProvider($webapp, $core);
 
 		$provider->validateShare($share);
 		$this->assertSame('webapp-id', $provider->shareReceived($share));
@@ -109,35 +109,49 @@ final class FolderCloudFederationProviderTest extends LocalizedTestCase {
 		$share->method('getProtocol')->willReturn($protocol);
 		$webapp = $this->createMock(WebappCloudFederationProvider::class);
 		$webapp->expects($this->once())->method('validateShare')->with($share)->willThrowException(new BadRequestException(['protocol.webapp']));
-		$folder = $this->createMock(ICloudFederationProvider::class);
-		$folder->expects($this->never())->method('shareReceived');
+		$core = $this->createMock(ICloudFederationProvider::class);
+		$core->expects($this->never())->method('shareReceived');
 
 		$this->expectException(BadRequestException::class);
-		(new FolderCloudFederationProvider($webapp, $folder))->validateShare($share);
+		(new DelegatingCloudFederationProvider($webapp, $core))->validateShare($share);
 	}
 
 	public function testCoreRejectionIsNotHidden(): void {
 		$share = $this->createMock(ICloudFederationShare::class);
 		$share->method('getProtocol')->willReturn(['name' => 'other']);
-		$folder = $this->createMock(ICloudFederationProvider::class);
-		$folder->method('shareReceived')->willThrowException(new ProviderCouldNotAddShareException('Unsupported protocol', '', 501));
+		$core = $this->createMock(ICloudFederationProvider::class);
+		$core->method('shareReceived')->willThrowException(new ProviderCouldNotAddShareException('Unsupported protocol', '', 501));
 		$webapp = $this->createMock(WebappCloudFederationProvider::class);
 		$webapp->expects($this->never())->method('shareReceived');
 
 		$this->expectException(ProviderCouldNotAddShareException::class);
 		$this->expectExceptionMessage('Unsupported protocol');
-		(new FolderCloudFederationProvider($webapp, $folder))->shareReceived($share);
+		(new DelegatingCloudFederationProvider($webapp, $core))->shareReceived($share);
 	}
 
 	public function testCoreGroupShareSupportIsPreserved(): void {
-		$folder = $this->createMock(ICloudFederationProvider::class);
-		$folder->method('getSupportedShareTypes')->willReturn(['user', 'group']);
+		$core = $this->createMock(ICloudFederationProvider::class);
+		$core->method('getSupportedShareTypes')->willReturn(['user', 'group']);
 		$webapp = $this->createMock(WebappCloudFederationProvider::class);
 		$webapp->method('getSupportedShareTypes')->willReturn(['user']);
-		$provider = new FolderCloudFederationProvider($webapp, $folder);
+		$provider = new DelegatingCloudFederationProvider($webapp, $core);
 
 		$this->assertSame('folder', $provider->getShareType());
 		$this->assertSame(['user', 'group'], $provider->getSupportedShareTypes());
+	}
+
+	public function testFileResourceTypeIsReportedAndDelegates(): void {
+		$share = $this->createMock(ICloudFederationShare::class);
+		$share->method('getProtocol')->willReturn(['name' => 'multi', 'webapp' => [], 'webdav' => []]);
+		$webapp = $this->createMock(WebappCloudFederationProvider::class);
+		$webapp->method('shareReceived')->with($share)->willReturn('webapp-id');
+		$webapp->method('getSupportedShareTypes')->willReturn(['user']);
+		$core = $this->createMock(ICloudFederationProvider::class);
+		$core->expects($this->never())->method('shareReceived');
+		$provider = new DelegatingCloudFederationProvider($webapp, $core, 'file');
+
+		$this->assertSame('file', $provider->getShareType());
+		$this->assertSame('webapp-id', $provider->shareReceived($share));
 	}
 
 	public function testMissingCoreProviderFailsExplicitlyForNonWebappShares(): void {
@@ -147,7 +161,7 @@ final class FolderCloudFederationProviderTest extends LocalizedTestCase {
 		$webapp->expects($this->never())->method('shareReceived');
 
 		$this->expectException(ProviderDoesNotExistsException::class);
-		(new FolderCloudFederationProvider($webapp, null))->shareReceived($share);
+		(new DelegatingCloudFederationProvider($webapp, null))->shareReceived($share);
 	}
 
 	public function testWebappDoesNotRequireCoreProvider(): void {
@@ -156,7 +170,7 @@ final class FolderCloudFederationProviderTest extends LocalizedTestCase {
 		$webapp = $this->createMock(WebappCloudFederationProvider::class);
 		$webapp->method('shareReceived')->with($share)->willReturn('webapp-id');
 		$webapp->method('getSupportedShareTypes')->willReturn(['user']);
-		$provider = new FolderCloudFederationProvider($webapp, null);
+		$provider = new DelegatingCloudFederationProvider($webapp, null);
 
 		$this->assertSame('webapp-id', $provider->shareReceived($share));
 		$this->assertSame(['user'], $provider->getSupportedShareTypes());
@@ -167,36 +181,38 @@ final class FolderCloudFederationProviderTest extends LocalizedTestCase {
 		$webapp = $this->createMock(WebappCloudFederationProvider::class);
 		$webapp->method('ownsNotification')->with('remote-id', $notification)->willReturn(false);
 		$webapp->expects($this->never())->method('notificationReceived');
-		$folder = $this->createMock(ICloudFederationProvider::class);
-		$folder->expects($this->once())->method('notificationReceived')->with('SHARE_UNSHARED', 'remote-id', $notification)->willReturn(['core-result']);
+		$core = $this->createMock(ICloudFederationProvider::class);
+		$core->expects($this->once())->method('notificationReceived')->with('SHARE_UNSHARED', 'remote-id', $notification)->willReturn(['core-result']);
 
-		$this->assertSame(['core-result'], (new FolderCloudFederationProvider($webapp, $folder))->notificationReceived('SHARE_UNSHARED', 'remote-id', $notification));
+		$this->assertSame(['core-result'], (new DelegatingCloudFederationProvider($webapp, $core))->notificationReceived('SHARE_UNSHARED', 'remote-id', $notification));
 	}
 
-	public function testOwnedWebappNotificationsGoToWebappProvider(): void {
+	public function testOwnedWebappNotificationsAreHandledAndForwardedToCore(): void {
 		$notification = ['sharedSecret' => 'secret'];
 		$webapp = $this->createMock(WebappCloudFederationProvider::class);
 		$webapp->method('ownsNotification')->with('remote-id', $notification)->willReturn(true);
 		$webapp->expects($this->once())->method('notificationReceived')->with('SHARE_UNSHARED', 'remote-id', $notification)->willReturn([]);
-		$folder = $this->createMock(ICloudFederationProvider::class);
-		$folder->expects($this->never())->method('notificationReceived');
+		// The paired Files mount is reaped by core even when the webapp
+		// provider owned the notification (e.g. `file` resourceType).
+		$core = $this->createMock(ICloudFederationProvider::class);
+		$core->expects($this->once())->method('notificationReceived')->with('SHARE_UNSHARED', 'remote-id', $notification)->willReturn(['core-result']);
 
-		$this->assertSame([], (new FolderCloudFederationProvider($webapp, $folder))->notificationReceived('SHARE_UNSHARED', 'remote-id', $notification));
+		$this->assertSame(['core-result'], (new DelegatingCloudFederationProvider($webapp, $core))->notificationReceived('SHARE_UNSHARED', 'remote-id', $notification));
 	}
 
 	public function testSignedNotificationIdentityIsDelegatedToCore(): void {
 		$payload = ['sharedSecret' => 'secret'];
-		$folder = $this->createMock(ISignedCloudFederationProvider::class);
-		$folder->expects($this->once())->method('getFederationIdFromSharedSecret')->with('secret', $payload)->willReturn('owner@remote.example');
+		$core = $this->createMock(ISignedCloudFederationProvider::class);
+		$core->expects($this->once())->method('getFederationIdFromSharedSecret')->with('secret', $payload)->willReturn('owner@remote.example');
 		$webapp = $this->createMock(WebappCloudFederationProvider::class);
 
-		$this->assertSame('owner@remote.example', (new FolderCloudFederationProvider($webapp, $folder))->getFederationIdFromSharedSecret('secret', $payload));
+		$this->assertSame('owner@remote.example', (new DelegatingCloudFederationProvider($webapp, $core))->getFederationIdFromSharedSecret('secret', $payload));
 	}
 
 	public function testUnsignedProviderDoesNotInventNotificationIdentity(): void {
-		$folder = $this->createMock(ICloudFederationProvider::class);
+		$core = $this->createMock(ICloudFederationProvider::class);
 		$webapp = $this->createMock(WebappCloudFederationProvider::class);
 
-		$this->assertSame('', (new FolderCloudFederationProvider($webapp, $folder))->getFederationIdFromSharedSecret('secret', []));
+		$this->assertSame('', (new DelegatingCloudFederationProvider($webapp, $core))->getFederationIdFromSharedSecret('secret', []));
 	}
 }

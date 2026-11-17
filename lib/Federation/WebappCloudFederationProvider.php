@@ -18,10 +18,10 @@ use OCP\IUserManager;
 use Psr\Log\LoggerInterface;
 
 /**
- * Handles inbound OCM folder shares carrying the webapp protocol.
+ * Handles inbound OCM folder and file shares carrying the webapp protocol.
  *
- * FolderCloudFederationProvider delegates webapp shares to this provider
- * and leaves other folder shares to Nextcloud's registered provider.
+ * DelegatingCloudFederationProvider delegates webapp shares to this
+ * provider and leaves other shares to Nextcloud's registered provider.
  *
  * Accepts payloads in `protocol.webapp` or deprecated single-protocol
  * `options`, with permission and target lists and an absolute `uri`.
@@ -202,7 +202,7 @@ class WebappCloudFederationProvider implements IValidationAwareCloudFederationPr
 	 * @throws ProviderCouldNotAddShareException
 	 */
 	private function parseShare(ICloudFederationShare $share): array {
-		if ($share->getResourceType() !== Application::WEBAPP_RESOURCE_TYPE) {
+		if (!in_array($share->getResourceType(), Application::WEBAPP_RESOURCE_TYPES, true)) {
 			throw new BadRequestException(['resourceType']);
 		}
 

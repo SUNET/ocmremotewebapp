@@ -15,7 +15,7 @@ final class MakefileTest extends TestCase {
 	private const RUNTIME_FILES = [
 		'appinfo/info.xml',
 		'appinfo/routes.php',
-		'lib/Federation/FolderCloudFederationProvider.php',
+		'lib/Federation/DelegatingCloudFederationProvider.php',
 		'templates/index.php',
 		'img/app.svg',
 		'js/ocmremotewebapp-main.mjs',

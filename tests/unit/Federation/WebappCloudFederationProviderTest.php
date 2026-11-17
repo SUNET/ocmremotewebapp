@@ -6,7 +6,7 @@ namespace OCA\OCMRemoteWebApp\Tests\Unit\Federation;
 
 use OCA\OCMRemoteWebApp\Db\WebappShare;
 use OCA\OCMRemoteWebApp\Db\WebappShareMapper;
-use OCA\OCMRemoteWebApp\Federation\FolderCloudFederationProvider;
+use OCA\OCMRemoteWebApp\Federation\DelegatingCloudFederationProvider;
 use OCA\OCMRemoteWebApp\Federation\WebappCloudFederationProvider;
 use OCP\Federation\Exceptions\BadRequestException;
 use OCP\Federation\ICloudFederationFactory;
@@ -32,7 +32,7 @@ final class WebappCloudFederationProviderTest extends LocalizedTestCase {
 	}
 
 	/** @param array<string, mixed> $protocol */
-	#[DataProviderExternal(FolderCloudFederationProviderTest::class, 'malformedWebappProtocols')]
+	#[DataProviderExternal(DelegatingCloudFederationProviderTest::class, 'malformedWebappProtocols')]
 	public function testMalformedWebappIsRejectedByActualValidator(array $protocol): void {
 		$share = $this->createMock(ICloudFederationShare::class);
 		$share->method('getProtocol')->willReturn($protocol);
@@ -44,11 +44,11 @@ final class WebappCloudFederationProviderTest extends LocalizedTestCase {
 		$folder->expects($this->never())->method('shareReceived');
 
 		$this->expectException(BadRequestException::class);
-		(new FolderCloudFederationProvider($this->provider($mapper), $folder))->validateShare($share);
+		(new DelegatingCloudFederationProvider($this->provider($mapper), $folder))->validateShare($share);
 	}
 
 	/** @param array<string, mixed> $protocol */
-	#[DataProviderExternal(FolderCloudFederationProviderTest::class, 'malformedWebappProtocols')]
+	#[DataProviderExternal(DelegatingCloudFederationProviderTest::class, 'malformedWebappProtocols')]
 	public function testMalformedWebappIsRejectedBeforePersistence(array $protocol): void {
 		$share = $this->createMock(ICloudFederationShare::class);
 		$share->method('getProtocol')->willReturn($protocol);
@@ -60,7 +60,7 @@ final class WebappCloudFederationProviderTest extends LocalizedTestCase {
 		$folder->expects($this->never())->method('shareReceived');
 
 		$this->expectException(BadRequestException::class);
-		(new FolderCloudFederationProvider($this->provider($mapper), $folder))->shareReceived($share);
+		(new DelegatingCloudFederationProvider($this->provider($mapper), $folder))->shareReceived($share);
 	}
 
 	public function testValidWebappStillValidatesAndIsPersisted(): void {
@@ -98,10 +98,49 @@ final class WebappCloudFederationProviderTest extends LocalizedTestCase {
 		});
 		$folder = $this->createMock(ICloudFederationProvider::class);
 		$folder->expects($this->never())->method('shareReceived');
-		$provider = new FolderCloudFederationProvider($this->provider($mapper), $folder);
+		$provider = new DelegatingCloudFederationProvider($this->provider($mapper), $folder);
 
 		$provider->validateShare($share);
 		$this->assertSame('123', $provider->shareReceived($share));
+	}
+
+	public function testFileResourceTypeWebappShareIsAccepted(): void {
+		$share = $this->createMock(ICloudFederationShare::class);
+		$share->method('getResourceType')->willReturn('file');
+		$share->method('getShareWith')->willReturn('recipient');
+		$share->method('getProtocol')->willReturn([
+			'name' => 'webapp',
+			'webapp' => [
+				'uri' => 'https://remote.example/app',
+				'permissions' => ['read'],
+				'requirements' => ['must-exchange-token'],
+				'targets' => ['iframe'],
+				'sharedSecret' => 'secret',
+				'apps' => [['name' => 'Editor', 'mediaTypes' => ['text/markdown']]],
+			],
+		]);
+		$mapper = $this->createMock(WebappShareMapper::class);
+		$mapper->expects($this->once())->method('insert')->willReturnCallback(function (WebappShare $entity): WebappShare {
+			$this->assertSame('recipient', $entity->getLocalUid());
+			$this->assertSame('Editor', $entity->getPrimaryAppName());
+			$entity->setId(456);
+			return $entity;
+		});
+		$provider = new DelegatingCloudFederationProvider($this->provider($mapper), null, 'file');
+
+		$this->assertSame('456', $provider->shareReceived($share));
+	}
+
+	public function testUnsupportedResourceTypeIsRejected(): void {
+		$share = $this->createMock(ICloudFederationShare::class);
+		$share->method('getResourceType')->willReturn('calendar');
+		$share->method('getShareWith')->willReturn('recipient');
+		$share->method('getProtocol')->willReturn(['name' => 'webapp', 'webapp' => ['uri' => 'https://remote.example/app']]);
+		$mapper = $this->createMock(WebappShareMapper::class);
+		$mapper->expects($this->never())->method('insert');
+
+		$this->expectException(BadRequestException::class);
+		(new DelegatingCloudFederationProvider($this->provider($mapper), null))->shareReceived($share);
 	}
 
 	/** @param array<string, mixed>|null $apps */

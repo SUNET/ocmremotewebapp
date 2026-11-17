@@ -24,14 +24,19 @@ class LocalOCMDiscoveryEventListener implements IEventListener {
 		// marker). Inbound shares reach us via cloud_federation_api,
 		// which dispatches by resourceType to the provider registered
 		// in Application::boot(); no per-app path needs advertising.
-		$event->registerResourceType(
-			Application::WEBAPP_RESOURCE_TYPE,
-			['user'],
-			[
-				'webapp-receive' => [
-					'targets' => ['blank', 'iframe'],
+		// Webapp shares are accepted for both folder and file resources;
+		// registering under `file` merges with core's existing webdav
+		// advertisement for that resource type.
+		foreach (Application::WEBAPP_RESOURCE_TYPES as $resourceType) {
+			$event->registerResourceType(
+				$resourceType,
+				['user'],
+				[
+					'webapp-receive' => [
+						'targets' => ['blank', 'iframe'],
+					],
 				],
-			],
-		);
+			);
+		}
 	}
 }
