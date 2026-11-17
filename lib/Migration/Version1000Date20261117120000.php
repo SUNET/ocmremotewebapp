@@ -47,7 +47,7 @@ class Version1000Date20261117120000 extends SimpleMigrationStep {
 		return $schema;
 	}
 
-	public function postSchemaChange(IOutput $output): void {
+	public function postSchemaChange(IOutput $output, Closure $schemaClosure, array $options): void {
 		$select = $this->db->getQueryBuilder();
 		$select->select('id', 'app_name', 'media_types')
 			->from('ocmremotewebapp_shares')
@@ -55,20 +55,25 @@ class Version1000Date20261117120000 extends SimpleMigrationStep {
 		$result = $select->executeQuery();
 
 		$update = $this->db->getQueryBuilder();
-		while ($row = $result->fetch()) {
-			$appName = (string)($row['app_name'] ?? '');
-			if ($appName === '') {
+		while (is_array($row = $result->fetch())) {
+			$appName = $row['app_name'] ?? null;
+			if (!is_string($appName) || $appName === '') {
 				continue;
 			}
-			$mediaTypes = json_decode((string)($row['media_types'] ?? ''), true);
+			$rowMediaTypes = $row['media_types'] ?? null;
+			$mediaTypes = is_string($rowMediaTypes) ? json_decode($rowMediaTypes, true) : null;
 			$cleanMediaTypes = is_array($mediaTypes)
 				? array_values(array_filter($mediaTypes, fn ($t) => is_string($t) && $t !== ''))
 				: [];
+			$rowId = $row['id'] ?? null;
+			if (!is_numeric($rowId)) {
+				continue;
+			}
 			$update->update('ocmremotewebapp_shares')
 				->set('apps', $update->createNamedParameter((string)json_encode([
 					['name' => $appName, 'mediaTypes' => $cleanMediaTypes],
 				])))
-				->where($update->expr()->eq('id', $update->createNamedParameter((int)$row['id'], IQueryBuilder::PARAM_INT)))
+				->where($update->expr()->eq('id', $update->createNamedParameter((int)$rowId, IQueryBuilder::PARAM_INT)))
 				->executeStatement();
 		}
 		$result->closeCursor();

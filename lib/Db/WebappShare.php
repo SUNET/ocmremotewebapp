@@ -114,6 +114,12 @@ class WebappShare extends Entity {
 			return '';
 		}
 		$first = $apps[0] ?? null;
-		return is_array($first) && is_string($first['name'] ?? null) ? $first['name'] : '';
+		if (is_array($first)) {
+			$name = $first['name'] ?? null;
+			if (is_string($name)) {
+				return $name;
+			}
+		}
+		return '';
 	}
 }
