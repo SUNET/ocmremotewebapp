@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-17
+
 ### Changed
 
 - Follow OCM-API v08 (cs3org/OCM-API#423): the `webapp` protocol payload's `appName` and `mediaTypes` fields are replaced by an `apps` array of `{name, mediaTypes}` entries. Inbound shares are parsed from `apps`, stored in a new `apps` column (existing `app_name`/`media_types` values are migrated into it and the old columns dropped), and exposed to the frontend as `apps`; the share title and launch pages use the first entry's `name`.
+- Update composer and npm dependencies, and raise the development PHP requirement to `^8.2` (Nextcloud 31+ requires PHP 8.2, and current security advisories block PHP 8.1).
 
 ## [1.0.10] - 2026-10-12
 
