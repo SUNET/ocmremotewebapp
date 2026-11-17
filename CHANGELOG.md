@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-17
+
+### Fixed
+
+- Pin `@nextcloud/vue` to 9.13.1 and override `vue-router` to 5.3.1: vue-router >= 5.4 pulls in `ast-walker-scope` 0.10, whose engines require node >= 24.11 and broke `npm ci --engine-strict` (used by the release Makefile) on older node 24.x.
+
 ## [1.1.0] - 2026-11-17
 
 ### Changed
